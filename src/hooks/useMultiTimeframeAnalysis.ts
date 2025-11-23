@@ -20,12 +20,22 @@ interface DominantBias {
   reasoning: string;
 }
 
+interface PremiumDiscount {
+  currentPrice: number;
+  rangeHigh: number;
+  rangeLow: number;
+  rangePercentage: number;
+  status: "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT";
+  statusDescription: string;
+}
+
 interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   timeframe: string;
   interpretation: string;
   alignedWithHigherTF: boolean;
   tradingOpportunity: boolean;
   reasoning: string;
+  premiumDiscount: PremiumDiscount;
 }
 
 interface MTFAnalysis {

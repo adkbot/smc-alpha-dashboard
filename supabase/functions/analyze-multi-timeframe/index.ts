@@ -30,7 +30,64 @@ interface BOSCHOCHResult {
   chochCount: number;
 }
 
+interface PremiumDiscountResult {
+  currentPrice: number;
+  rangeHigh: number;
+  rangeLow: number;
+  rangePercentage: number;
+  status: "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT";
+  statusDescription: string;
+}
+
 // Detecta swing points (highs e lows) nos candles
+function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): PremiumDiscountResult {
+  const currentPrice = candles[candles.length - 1].close;
+  
+  const recentHighs = swings.filter(s => s.type === "high").slice(-3);
+  const recentLows = swings.filter(s => s.type === "low").slice(-3);
+  
+  if (recentHighs.length === 0 || recentLows.length === 0) {
+    return {
+      currentPrice,
+      rangeHigh: currentPrice,
+      rangeLow: currentPrice,
+      rangePercentage: 50,
+      status: "EQUILIBRIUM",
+      statusDescription: "Range indefinido",
+    };
+  }
+  
+  const rangeHigh = Math.max(...recentHighs.map(h => h.price));
+  const rangeLow = Math.min(...recentLows.map(l => l.price));
+  
+  const rangeSize = rangeHigh - rangeLow;
+  const priceFromLow = currentPrice - rangeLow;
+  const rangePercentage = rangeSize > 0 ? (priceFromLow / rangeSize) * 100 : 50;
+  
+  let status: "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT";
+  let statusDescription: string;
+  
+  if (rangePercentage >= 60) {
+    status = "PREMIUM";
+    statusDescription = "Zona de Venda (Premium)";
+  } else if (rangePercentage <= 40) {
+    status = "DISCOUNT";
+    statusDescription = "Zona de Compra (Discount)";
+  } else {
+    status = "EQUILIBRIUM";
+    statusDescription = "Equilíbrio (50%)";
+  }
+  
+  return {
+    currentPrice,
+    rangeHigh,
+    rangeLow,
+    rangePercentage: Math.max(0, Math.min(100, rangePercentage)),
+    status,
+    statusDescription,
+  };
+}
+
 function detectSwingPoints(
   candles: Candle[],
   leftBars: number = 5,
@@ -401,6 +458,7 @@ serve(async (req) => {
     const currentTFCandles = await fetchBinanceKlines(symbol, currentTimeframe, 100);
     const currentTFSwings = detectSwingPoints(currentTFCandles);
     const currentTFLocalAnalysis = detectBOSandCHOCH(currentTFCandles, currentTFSwings);
+    const premiumDiscount = calculatePremiumDiscount(currentTFCandles, currentTFSwings);
     const currentTFAnalysis = analyzeWithContext(
       currentTFLocalAnalysis,
       dominantBias,
@@ -438,6 +496,7 @@ serve(async (req) => {
       currentTimeframe: {
         timeframe: currentTimeframe,
         ...currentTFAnalysis,
+        premiumDiscount,
       },
       
       // OVERVIEW DE TODOS OS TIMEFRAMES

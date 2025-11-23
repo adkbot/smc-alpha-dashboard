@@ -25,7 +25,6 @@ const getTrendColorClass = (trend: string) => {
 
 export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
   const [trend] = useState<"ALTA" | "BAIXA" | "NEUTRO">("ALTA");
-  const [pdStatus] = useState("Discount (Barato)");
   const [signals] = useState([
     {
       id: 1,
@@ -276,35 +275,101 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
         </div>
       </div>
 
-      {/* Premium/Discount */}
-      <div className="p-4 border-b border-border">
-        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-          Range & Filtro
-        </h3>
-        
-        <Card className="p-3 bg-secondary border-border relative overflow-hidden">
-          <div className="flex justify-between text-xs mb-2">
-            <span className="text-muted-foreground">Posição no Range</span>
-            <span className="font-bold text-foreground">{pdStatus}</span>
-          </div>
+      {/* Range & Filtro */}
+      {mtfData?.currentTimeframe?.premiumDiscount && (
+        <div className="p-4 border-b border-border">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+            Range & Filtro
+          </h3>
           
-          {/* PD Bar */}
-          <div className="w-full h-2 bg-muted rounded-full overflow-hidden flex">
-            <div className="w-1/2 bg-destructive/30 border-r border-border"></div>
-            <div className="w-1/2 bg-success/30"></div>
-          </div>
+          <Card className={`p-3 border-2 ${
+            mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" 
+              ? "bg-destructive/10 border-destructive" 
+              : mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT"
+              ? "bg-success/10 border-success"
+              : "bg-secondary border-border"
+          }`}>
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs text-muted-foreground">Posição no Range</span>
+              <Badge className={
+                mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" 
+                  ? "bg-destructive" 
+                  : mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT"
+                  ? "bg-success"
+                  : "bg-secondary"
+              }>
+                {mtfData.currentTimeframe.premiumDiscount.statusDescription}
+              </Badge>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
+              <div>
+                <span className="text-muted-foreground">High:</span>
+                <div className="font-mono font-bold">
+                  ${mtfData.currentTimeframe.premiumDiscount.rangeHigh.toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Atual:</span>
+                <div className="font-mono font-bold text-primary">
+                  ${mtfData.currentTimeframe.premiumDiscount.currentPrice.toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Low:</span>
+                <div className="font-mono font-bold">
+                  ${mtfData.currentTimeframe.premiumDiscount.rangeLow.toFixed(2)}
+                </div>
+              </div>
+            </div>
+            
+            <div className="relative">
+              <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
+                <div className="w-1/2 bg-destructive/40 border-r-2 border-foreground"></div>
+                <div className="w-1/2 bg-success/40"></div>
+              </div>
+              
+              <div 
+                className="w-1.5 h-5 bg-primary border-2 border-foreground absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500 rounded-sm shadow-lg"
+                style={{ left: `${mtfData.currentTimeframe.premiumDiscount.rangePercentage}%` }}
+              >
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-primary whitespace-nowrap">
+                  {mtfData.currentTimeframe.premiumDiscount.rangePercentage.toFixed(0)}%
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
+              <span>← PREMIUM (Venda)</span>
+              <span>DISCOUNT (Compra) →</span>
+            </div>
+          </Card>
           
-          <div 
-            className="w-1 h-3 bg-foreground absolute top-10 transition-all duration-500"
-            style={{ left: '35%' }}
-          ></div>
-          
-          <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-            <span>Premium (Venda)</span>
-            <span>Discount (Compra)</span>
-          </div>
-        </Card>
-      </div>
+          <Card className="p-2 mt-2 bg-muted/50">
+            <p className="text-[10px] text-muted-foreground">
+              {mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" && 
+               mtfData.dominantBias.bias === "BAIXA" && (
+                "✅ Preço em zona premium + viés de baixa = Zona ideal para SHORT"
+              )}
+              {mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT" && 
+               mtfData.dominantBias.bias === "ALTA" && (
+                "✅ Preço em zona discount + viés de alta = Zona ideal para LONG"
+              )}
+              {mtfData.currentTimeframe.premiumDiscount.status === "EQUILIBRIUM" && (
+                "⏸️ Preço em equilíbrio - Aguardar movimento para zona premium ou discount"
+              )}
+              {mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" && 
+               mtfData.dominantBias.bias === "ALTA" && (
+                "⚠️ Preço em premium mas viés é de alta - Aguardar pullback para discount"
+              )}
+              {mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT" && 
+               mtfData.dominantBias.bias === "BAIXA" && (
+                "⚠️ Preço em discount mas viés é de baixa - Aguardar rejeição em premium"
+              )}
+            </p>
+          </Card>
+        </div>
+      )}
 
       {/* Active Signals */}
       <div className="p-4 flex-1">
