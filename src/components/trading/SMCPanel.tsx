@@ -1,8 +1,10 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sparkles, TrendingUp, Target } from "lucide-react";
+import { Sparkles, TrendingUp, Target, Activity } from "lucide-react";
 import { useState } from "react";
+import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface SMCPanelProps {
   symbol: string;
@@ -23,6 +25,9 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
       time: new Date().toLocaleTimeString(),
     }
   ]);
+
+  // Multi-Timeframe Analysis
+  const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol);
 
   const getTrendColor = () => {
     if (trend === "ALTA") return "text-success border-success";
@@ -62,6 +67,98 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
             <strong className="text-foreground">Recomendação:</strong> Aguardar pullback para zona de desconto antes de entrada.
           </p>
         </Card>
+      </div>
+
+      {/* Multi-Timeframe Analysis */}
+      <div className="p-4 border-b border-border">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Análise Multi-Timeframe
+            </h3>
+          </div>
+        </div>
+        
+        {mtfLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : mtfData ? (
+          <>
+            {/* Timeframes Grid */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {mtfData.analysis.map((tf) => (
+                <Card 
+                  key={tf.timeframe} 
+                  className={`p-2 ${
+                    tf.timeframe === interval 
+                      ? 'border-primary bg-primary/5' 
+                      : 'bg-secondary border-border'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-muted-foreground uppercase">
+                      {tf.timeframe}
+                    </span>
+                    <Badge 
+                      variant="outline" 
+                      className={`text-[10px] ${
+                        tf.trend === 'ALTA' 
+                          ? 'text-success border-success' 
+                          : tf.trend === 'BAIXA'
+                          ? 'text-destructive border-destructive'
+                          : 'text-muted-foreground border-muted'
+                      }`}
+                    >
+                      {tf.trend === 'ALTA' ? '↑' : tf.trend === 'BAIXA' ? '↓' : '─'}
+                    </Badge>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    Conf: {tf.confidence}%
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            {/* Alignment Status */}
+            <Card className="p-3 bg-secondary/50 border-border">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-muted-foreground">Alinhamento:</span>
+                <Badge 
+                  variant="outline"
+                  className={`text-xs ${
+                    mtfData.alignmentPercentage >= 70 
+                      ? 'text-success border-success'
+                      : mtfData.alignmentPercentage >= 40
+                      ? 'text-warning border-warning'
+                      : 'text-destructive border-destructive'
+                  }`}
+                >
+                  {mtfData.alignmentPercentage >= 70 ? '🟢' : mtfData.alignmentPercentage >= 40 ? '🟡' : '🔴'} 
+                  {' '}{mtfData.alignmentPercentage}%
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-muted-foreground">Viés Dominante:</span>
+                <span className={`text-xs font-bold ${
+                  mtfData.dominantBias === 'ALTA' 
+                    ? 'text-success' 
+                    : mtfData.dominantBias === 'BAIXA'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                }`}>
+                  {mtfData.dominantBias}
+                </span>
+              </div>
+            </Card>
+          </>
+        ) : (
+          <div className="text-center text-xs text-muted-foreground py-4">
+            Erro ao carregar análise
+          </div>
+        )}
       </div>
 
       {/* Market Structure */}
