@@ -22,8 +22,8 @@ const Dashboard = () => {
           <TradingChart symbol={symbol} interval={interval} />
         </div>
         
-        <div className="w-96 flex flex-col border-l border-border overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
+        <div className="w-96 flex flex-col border-l border-border">
+          <div className="h-full overflow-y-auto pb-4">
             <AccountPanel />
             <SMCPanel symbol={symbol} interval={interval} />
           </div>

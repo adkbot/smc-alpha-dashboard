@@ -3,12 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Wallet, Settings } from "lucide-react";
 import { useState } from "react";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 export const AccountPanel = () => {
   const [balance] = useState(10000.00);
   const [pnl] = useState(450.23);
   const [pnlPercent] = useState(4.5);
   const [trades] = useState({ wins: 23, losses: 7, total: 30 });
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const winRate = ((trades.wins / trades.total) * 100).toFixed(1);
 
@@ -21,9 +23,16 @@ export const AccountPanel = () => {
             Conta de Trading
           </h3>
         </div>
-        <Button size="sm" variant="ghost" className="h-7">
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          className="h-7"
+          onClick={() => setSettingsOpen(true)}
+        >
           <Settings className="w-3 h-3" />
         </Button>
+        
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
 
       {/* Balance Card */}

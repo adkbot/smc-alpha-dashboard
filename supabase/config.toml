@@ -1,1 +1,10 @@
 project_id = "zfefnlibzgkfbgdtagho"
+
+[functions.encrypt-api-credentials]
+verify_jwt = true
+
+[functions.test-broker-connection]
+verify_jwt = true
+
+[functions.sync-real-balance]
+verify_jwt = true

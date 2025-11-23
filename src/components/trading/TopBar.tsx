@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { Settings, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 interface TopBarProps {
   symbol: string;
@@ -19,6 +20,7 @@ interface TopBarProps {
 export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: TopBarProps) => {
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [isConnected, setIsConnected] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -81,10 +83,17 @@ export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: T
       </div>
       
       <div className="flex items-center gap-4 text-sm">
-        <Button size="sm" variant="ghost" className="h-8">
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          className="h-8"
+          onClick={() => setSettingsOpen(true)}
+        >
           <Settings className="w-4 h-4 mr-2" />
           Configurações
         </Button>
+        
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         
         <div className="h-6 w-px bg-border"></div>
         
