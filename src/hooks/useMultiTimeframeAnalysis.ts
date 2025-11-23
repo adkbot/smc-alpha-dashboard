@@ -20,7 +20,11 @@ interface MTFAnalysis {
 
 const DEFAULT_TIMEFRAMES = ["1d", "4h", "1h", "30m", "15m", "5m", "1m"];
 
-export const useMultiTimeframeAnalysis = (symbol: string, timeframes: string[] = DEFAULT_TIMEFRAMES) => {
+export const useMultiTimeframeAnalysis = (
+  symbol: string, 
+  currentTimeframe: string,
+  timeframes: string[] = DEFAULT_TIMEFRAMES
+) => {
   const [data, setData] = useState<MTFAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +37,11 @@ export const useMultiTimeframeAnalysis = (symbol: string, timeframes: string[] =
       const { data: result, error: funcError } = await supabase.functions.invoke(
         "analyze-multi-timeframe",
         {
-          body: { symbol, timeframes },
+          body: { 
+            symbol, 
+            timeframes,
+            currentTimeframe 
+          },
         }
       );
 
@@ -57,7 +65,7 @@ export const useMultiTimeframeAnalysis = (symbol: string, timeframes: string[] =
     const interval = setInterval(fetchAnalysis, 60000);
 
     return () => clearInterval(interval);
-  }, [symbol, JSON.stringify(timeframes)]);
+  }, [symbol, currentTimeframe, JSON.stringify(timeframes)]);
 
   return { data, loading, error, refresh: fetchAnalysis };
 };
