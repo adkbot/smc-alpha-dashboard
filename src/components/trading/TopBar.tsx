@@ -6,9 +6,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings, RefreshCw } from "lucide-react";
+import { Settings, RefreshCw, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface TopBarProps {
   symbol: string;
@@ -21,6 +24,9 @@ export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: T
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [isConnected, setIsConnected] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -32,6 +38,15 @@ export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: T
     
     return () => clearInterval(timer);
   }, []);
+
+  const handleLogout = async () => {
+    await signOut();
+    toast({
+      title: "Logout realizado",
+      description: "Até logo!",
+    });
+    navigate("/auth");
+  };
 
   return (
     <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 shrink-0">
@@ -91,6 +106,16 @@ export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: T
         >
           <Settings className="w-4 h-4 mr-2" />
           Configurações
+        </Button>
+        
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          className="h-8"
+          onClick={handleLogout}
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          Sair
         </Button>
         
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

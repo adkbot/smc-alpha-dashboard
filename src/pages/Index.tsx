@@ -1,9 +1,26 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, BarChart3, TrendingUp, Shield } from "lucide-react";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/dashboard");
+    }
+  }, [user, loading, navigate]);
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-card flex flex-col items-center justify-center p-8">
@@ -58,7 +75,7 @@ const Index = () => {
         <Button
           size="lg"
           className="bg-primary hover:bg-primary/90 text-primary-foreground text-lg px-8 py-6"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/auth")}
         >
           Acessar Plataforma
           <ArrowRight className="ml-2 w-5 h-5" />
