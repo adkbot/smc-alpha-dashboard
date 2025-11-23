@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sparkles, TrendingUp, Target, Activity } from "lucide-react";
+import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useState } from "react";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,18 @@ interface SMCPanelProps {
   symbol: string;
   interval: string;
 }
+
+const getTrendIcon = (trend: string) => {
+  if (trend === "ALTA") return <TrendingUp className="h-4 w-4 text-success" />;
+  if (trend === "BAIXA") return <TrendingDown className="h-4 w-4 text-destructive" />;
+  return <Minus className="h-4 w-4 text-muted-foreground" />;
+};
+
+const getTrendColorClass = (trend: string) => {
+  if (trend === "ALTA") return "text-success";
+  if (trend === "BAIXA") return "text-destructive";
+  return "text-muted-foreground";
+};
 
 export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
   const [trend] = useState<"ALTA" | "BAIXA" | "NEUTRO">("ALTA");
@@ -28,9 +40,6 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
 
   // Multi-Timeframe Analysis
   const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol, interval);
-  
-  // Encontrar análise do timeframe atual
-  const currentTFAnalysis = mtfData?.analysis.find(tf => tf.timeframe === interval);
 
   const getTrendColor = () => {
     if (trend === "ALTA") return "text-success border-success";
@@ -72,142 +81,176 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
         </Card>
       </div>
 
-      {/* Análise do Timeframe Atual */}
-      <div className="p-4 border-b border-border bg-gradient-to-br from-primary/5 to-card">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-primary" />
-            <h3 className="text-xs font-bold text-primary uppercase tracking-wider">
-              Análise {interval.toUpperCase()}
-            </h3>
-          </div>
-          <Badge variant="outline" className="text-xs border-primary text-primary">
-            Ativo
-          </Badge>
+      {/* CONTEXTO SUPERIOR - TOP-DOWN */}
+      {mtfLoading ? (
+        <div className="p-4 border-b border-border">
+          <Skeleton className="h-32 w-full" />
         </div>
-        
-        {mtfLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : currentTFAnalysis ? (
-          <Card className="p-3 bg-secondary/50 border-primary/30">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-muted-foreground">Tendência:</span>
-                <Badge 
-                  variant="outline" 
-                  className={`text-sm font-bold ${
-                    currentTFAnalysis.trend === 'ALTA' 
-                      ? 'text-success border-success' 
-                      : currentTFAnalysis.trend === 'BAIXA'
-                      ? 'text-destructive border-destructive'
-                      : 'text-muted-foreground border-muted'
-                  }`}
-                >
-                  {currentTFAnalysis.trend} {currentTFAnalysis.trend === 'ALTA' ? '↑' : currentTFAnalysis.trend === 'BAIXA' ? '↓' : '─'}
+      ) : mtfData ? (
+        <>
+          <div className="p-3 border-b-2 border-primary bg-gradient-to-br from-primary/10 to-card">
+            <h3 className="text-xs font-bold text-primary mb-2 uppercase flex items-center gap-1">
+              🎯 Contexto Superior (Top-Down)
+            </h3>
+            
+            {/* Grid dos 3 Timeframes Superiores */}
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              <Card className="p-2 bg-secondary/50">
+                <div className="text-[9px] text-muted-foreground mb-1">DIÁRIO</div>
+                <div className="flex items-center justify-between">
+                  <Badge className={`text-xs ${getTrendColorClass(mtfData.higherTimeframes["1d"].trend)}`}>
+                    {mtfData.higherTimeframes["1d"].trend}
+                  </Badge>
+                  {getTrendIcon(mtfData.higherTimeframes["1d"].trend)}
+                </div>
+                <div className="text-[9px] text-muted-foreground mt-1">
+                  BOS: {mtfData.higherTimeframes["1d"].lastBOS ? "✓" : "✗"} | 
+                  CHOCH: {mtfData.higherTimeframes["1d"].lastCHOCH ? "✓" : "✗"}
+                </div>
+              </Card>
+              
+              <Card className="p-2 bg-secondary/50">
+                <div className="text-[9px] text-muted-foreground mb-1">4 HORAS</div>
+                <div className="flex items-center justify-between">
+                  <Badge className={`text-xs ${getTrendColorClass(mtfData.higherTimeframes["4h"].trend)}`}>
+                    {mtfData.higherTimeframes["4h"].trend}
+                  </Badge>
+                  {getTrendIcon(mtfData.higherTimeframes["4h"].trend)}
+                </div>
+                <div className="text-[9px] text-muted-foreground mt-1">
+                  BOS: {mtfData.higherTimeframes["4h"].lastBOS ? "✓" : "✗"} | 
+                  CHOCH: {mtfData.higherTimeframes["4h"].lastCHOCH ? "✓" : "✗"}
+                </div>
+              </Card>
+              
+              <Card className="p-2 bg-secondary/50">
+                <div className="text-[9px] text-muted-foreground mb-1">1 HORA</div>
+                <div className="flex items-center justify-between">
+                  <Badge className={`text-xs ${getTrendColorClass(mtfData.higherTimeframes["1h"].trend)}`}>
+                    {mtfData.higherTimeframes["1h"].trend}
+                  </Badge>
+                  {getTrendIcon(mtfData.higherTimeframes["1h"].trend)}
+                </div>
+                <div className="text-[9px] text-muted-foreground mt-1">
+                  BOS: {mtfData.higherTimeframes["1h"].lastBOS ? "✓" : "✗"} | 
+                  CHOCH: {mtfData.higherTimeframes["1h"].lastCHOCH ? "✓" : "✗"}
+                </div>
+              </Card>
+            </div>
+            
+            {/* VIÉS DOMINANTE */}
+            <Card className={`p-2 border-2 ${
+              mtfData.dominantBias.bias === "ALTA" 
+                ? "bg-success/10 border-success" 
+                : mtfData.dominantBias.bias === "BAIXA"
+                ? "bg-destructive/10 border-destructive"
+                : "bg-secondary border-border"
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold">VIÉS DOMINANTE:</span>
+                <div className="flex items-center gap-1">
+                  <Badge className={`text-sm font-bold ${getTrendColorClass(mtfData.dominantBias.bias)}`}>
+                    {mtfData.dominantBias.bias}
+                  </Badge>
+                  <Badge variant="outline" className="text-[9px]">
+                    {mtfData.dominantBias.strength}
+                  </Badge>
+                </div>
+              </div>
+              <p className="text-[9px] text-muted-foreground">
+                {mtfData.dominantBias.reasoning}
+              </p>
+            </Card>
+          </div>
+
+          {/* ANÁLISE DO TIMEFRAME ATUAL */}
+          <div className="p-3 border-b border-border">
+            <div className="p-3 border-2 rounded-lg bg-card/50" style={{
+              borderColor: mtfData.currentTimeframe.alignedWithHigherTF 
+                ? "hsl(var(--success))" 
+                : "hsl(var(--warning))"
+            }}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold flex items-center gap-1">
+                  📊 {mtfData.currentTimeframe.timeframe.toUpperCase()}
+                </h3>
+                <Badge variant={mtfData.currentTimeframe.alignedWithHigherTF ? "default" : "secondary"}>
+                  {mtfData.currentTimeframe.alignedWithHigherTF ? "✓ ALINHADO" : "⚠ DIVERGENTE"}
                 </Badge>
               </div>
               
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-muted-foreground">Confiança:</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full ${
-                        currentTFAnalysis.confidence >= 70 ? 'bg-success' : 
-                        currentTFAnalysis.confidence >= 40 ? 'bg-warning' : 
-                        'bg-destructive'
-                      }`}
-                      style={{ width: `${currentTFAnalysis.confidence}%` }}
-                    />
+              <Card className="p-2 mb-2 bg-secondary/50">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs">Tendência:</span>
+                  <div className="flex items-center gap-1">
+                    <Badge className={getTrendColorClass(mtfData.currentTimeframe.trend)}>
+                      {mtfData.currentTimeframe.trend}
+                    </Badge>
+                    {getTrendIcon(mtfData.currentTimeframe.trend)}
                   </div>
-                  <span className="text-xs font-bold text-foreground">
-                    {currentTFAnalysis.confidence}%
-                  </span>
                 </div>
+                <div className="grid grid-cols-3 gap-2 text-[9px] mt-2">
+                  <div>
+                    <span className="text-muted-foreground">BOS:</span> 
+                    <span className="ml-1 font-bold">{mtfData.currentTimeframe.lastBOS ? "✓" : "✗"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">CHOCH:</span> 
+                    <span className="ml-1 font-bold">{mtfData.currentTimeframe.lastCHOCH ? "✓" : "✗"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Conf:</span> 
+                    <span className="ml-1 font-bold">{mtfData.currentTimeframe.confidence}%</span>
+                  </div>
+                </div>
+              </Card>
+              
+              <div className="p-2 bg-muted/50 rounded text-[10px] mb-2">
+                {mtfData.currentTimeframe.interpretation}
               </div>
               
-              {currentTFAnalysis.lastBOS && (
-                <div className="flex justify-between items-center pt-1 border-t border-border">
-                  <span className="text-xs text-muted-foreground">Último BOS:</span>
-                  <span className="text-xs font-mono text-foreground">
-                    {new Date(currentTFAnalysis.lastBOS).toLocaleTimeString('pt-BR')}
-                  </span>
-                </div>
+              {mtfData.currentTimeframe.tradingOpportunity && (
+                <Badge className="w-full justify-center bg-accent text-accent-foreground">
+                  🎯 SETUP IDENTIFICADO
+                </Badge>
               )}
             </div>
-          </Card>
-        ) : (
-          <div className="text-center text-xs text-muted-foreground py-4">
-            Sem dados para este timeframe
           </div>
-        )}
-      </div>
 
-      {/* Multi-Timeframe Overview */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Contexto Multi-Timeframe
-          </h3>
-        </div>
-        
-        {mtfLoading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : mtfData ? (
-          <>
-            {/* Compact Timeframes Grid */}
-            <div className="grid grid-cols-4 gap-1 mb-3">
-              {mtfData.analysis.map((tf) => (
-                <div 
-                  key={tf.timeframe} 
-                  className={`p-1 text-center rounded ${
+          {/* OVERVIEW DE TODOS OS TIMEFRAMES */}
+          <div className="p-3 border-b border-border">
+            <h3 className="text-xs font-bold text-muted-foreground mb-2">Visão Geral</h3>
+            <div className="grid grid-cols-7 gap-1">
+              {mtfData.allTimeframes.map((tf) => (
+                <div
+                  key={tf.timeframe}
+                  className={`p-1.5 rounded border text-center ${
                     tf.timeframe === interval 
-                      ? 'bg-primary/20 border border-primary' 
-                      : 'bg-secondary'
+                      ? 'border-primary bg-primary/20' 
+                      : 'border-border bg-secondary/50'
                   }`}
                 >
-                  <div className="text-[10px] font-bold text-muted-foreground">
-                    {tf.timeframe}
+                  <div className="text-[9px] text-muted-foreground font-medium mb-0.5">
+                    {tf.timeframe.toUpperCase()}
                   </div>
-                  <div className={`text-xs font-bold ${
-                    tf.trend === 'ALTA' 
-                      ? 'text-success' 
-                      : tf.trend === 'BAIXA'
-                      ? 'text-destructive'
-                      : 'text-muted-foreground'
-                  }`}>
-                    {tf.trend === 'ALTA' ? '↑' : tf.trend === 'BAIXA' ? '↓' : '─'}
-                  </div>
+                  <Badge
+                    variant={
+                      tf.trend === "ALTA" 
+                        ? "default" 
+                        : tf.trend === "BAIXA"
+                        ? "destructive"
+                        : "secondary"
+                    }
+                    className="text-[8px] px-1 py-0 h-4"
+                  >
+                    {tf.trend === "ALTA" ? "▲" : tf.trend === "BAIXA" ? "▼" : "─"}
+                  </Badge>
                 </div>
               ))}
             </div>
-
-            {/* Alignment Status */}
-            <Card className="p-2 bg-secondary/50 border-border">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] text-muted-foreground">Alinhamento:</span>
-                <Badge 
-                  variant="outline"
-                  className={`text-[10px] ${
-                    mtfData.alignmentPercentage >= 70 
-                      ? 'text-success border-success'
-                      : mtfData.alignmentPercentage >= 40
-                      ? 'text-warning border-warning'
-                      : 'text-destructive border-destructive'
-                  }`}
-                >
-                  {mtfData.alignmentPercentage >= 70 ? '🟢' : mtfData.alignmentPercentage >= 40 ? '🟡' : '🔴'} 
-                  {' '}{mtfData.alignmentPercentage}% • {mtfData.dominantBias}
-                </Badge>
-              </div>
-            </Card>
-          </>
-        ) : (
-          <div className="text-center text-xs text-muted-foreground py-4">
-            Erro ao carregar análise
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
 
       {/* Market Structure */}
       <div className="p-4 border-b border-border">

@@ -1,21 +1,44 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-interface TimeframeAnalysis {
-  timeframe: string;
+interface BOSCHOCHData {
   trend: "ALTA" | "BAIXA" | "NEUTRO";
   lastBOS: number | null;
+  lastCHOCH: number | null;
   confidence: number;
+  bosCount: number;
+  chochCount: number;
+}
+
+interface TimeframeAnalysis extends BOSCHOCHData {
+  timeframe: string;
+}
+
+interface DominantBias {
+  bias: "ALTA" | "BAIXA" | "NEUTRO" | "MISTO";
+  strength: string;
+  reasoning: string;
+}
+
+interface CurrentTimeframeAnalysis extends BOSCHOCHData {
+  timeframe: string;
+  interpretation: string;
+  alignedWithHigherTF: boolean;
+  tradingOpportunity: boolean;
+  reasoning: string;
 }
 
 interface MTFAnalysis {
   symbol: string;
   timestamp: string;
-  analysis: TimeframeAnalysis[];
-  alignment: number;
-  alignmentPercentage: number;
-  dominantBias: "ALTA" | "BAIXA" | "NEUTRO";
-  trendCounts: Record<string, number>;
+  higherTimeframes: {
+    "1d": BOSCHOCHData;
+    "4h": BOSCHOCHData;
+    "1h": BOSCHOCHData;
+  };
+  dominantBias: DominantBias;
+  currentTimeframe: CurrentTimeframeAnalysis;
+  allTimeframes: TimeframeAnalysis[];
 }
 
 const DEFAULT_TIMEFRAMES = ["1d", "4h", "1h", "30m", "15m", "5m", "1m"];
