@@ -69,9 +69,12 @@ const Auth = () => {
     });
 
     if (error) {
+      const isUserExists = error.message.includes("User already registered");
       toast({
         title: "Erro no cadastro",
-        description: error.message,
+        description: isUserExists 
+          ? "Este email já está cadastrado. Use a aba LOGIN para acessar sua conta."
+          : error.message,
         variant: "destructive",
       });
     } else {
