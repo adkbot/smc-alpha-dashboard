@@ -36,7 +36,7 @@ export const BotControlPanel = () => {
         .from("user_settings")
         .select("bot_status, paper_mode")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       // Buscar posições ativas
       const { count: activeCount } = await supabase
