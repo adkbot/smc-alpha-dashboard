@@ -340,12 +340,20 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
         <div className="grid grid-cols-2 gap-2">
           <Card className="p-3 bg-secondary border-border">
             <div className="text-xs text-muted-foreground mb-1">Último BOS</div>
-            <div className="text-sm font-bold text-foreground font-mono">14:32:15</div>
+            <div className="text-sm font-bold text-foreground font-mono">
+              {mtfData?.currentTimeframe?.lastBOS 
+                ? new Date(mtfData.currentTimeframe.lastBOS).toLocaleTimeString()
+                : "—"}
+            </div>
           </Card>
           
           <Card className="p-3 bg-secondary border-border">
             <div className="text-xs text-muted-foreground mb-1">Último CHOCH</div>
-            <div className="text-sm font-bold text-foreground font-mono">12:15:08</div>
+            <div className="text-sm font-bold text-foreground font-mono">
+              {mtfData?.currentTimeframe?.lastCHOCH 
+                ? new Date(mtfData.currentTimeframe.lastCHOCH).toLocaleTimeString()
+                : "—"}
+            </div>
           </Card>
         </div>
       </div>
