@@ -337,8 +337,8 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
             
             <div className="relative">
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
-                <div className="w-1/2 bg-destructive/40 border-r-2 border-foreground"></div>
-                <div className="w-1/2 bg-success/40"></div>
+                <div className="w-1/2 bg-success/40 border-r-2 border-foreground"></div>
+                <div className="w-1/2 bg-destructive/40"></div>
               </div>
               
               <div 
@@ -352,8 +352,8 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
             </div>
             
             <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
-              <span>← PREMIUM (Venda)</span>
-              <span>DISCOUNT (Compra) →</span>
+              <span>← DISCOUNT (Compra)</span>
+              <span>PREMIUM (Venda) →</span>
             </div>
           </Card>
           
