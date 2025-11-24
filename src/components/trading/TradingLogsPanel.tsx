@@ -46,7 +46,7 @@ export const TradingLogsPanel = () => {
     <Card className="p-4 m-4">
       <h3 className="font-bold mb-3 text-foreground">Logs de Execução</h3>
 
-      <ScrollArea className="h-64">
+      <ScrollArea className="h-[80px]">
         {logs.map((log) => (
           <div
             key={log.id}
