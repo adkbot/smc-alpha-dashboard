@@ -39,12 +39,58 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
 
   // Multi-Timeframe Analysis
   const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol, interval);
+  
+  // Real-time price state
+  const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
+  const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<"PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | null>(null);
 
   // Debug logs
   useEffect(() => {
     console.log("🔍 MTF Data recebida:", mtfData);
     console.log("📊 Premium/Discount:", mtfData?.currentTimeframe?.premiumDiscount);
   }, [mtfData]);
+
+  // Fetch real-time price from Binance
+  useEffect(() => {
+    const fetchRealtimePrice = async () => {
+      try {
+        const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+        const data = await response.json();
+        const currentPrice = parseFloat(data.price);
+        setRealtimePrice(currentPrice);
+
+        // Calculate real-time percentage if we have range data
+        if (mtfData?.currentTimeframe?.premiumDiscount) {
+          const { rangeHigh, rangeLow } = mtfData.currentTimeframe.premiumDiscount;
+          const rangeSize = rangeHigh - rangeLow;
+          const percentage = rangeSize > 0 
+            ? ((currentPrice - rangeLow) / rangeSize) * 100 
+            : 50;
+          setRealtimePercentage(Math.max(0, Math.min(100, percentage)));
+
+          // Update status based on percentage
+          if (percentage >= 60) {
+            setRealtimeStatus("PREMIUM");
+          } else if (percentage <= 40) {
+            setRealtimeStatus("DISCOUNT");
+          } else {
+            setRealtimeStatus("EQUILIBRIUM");
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao buscar preço em tempo real:", error);
+      }
+    };
+
+    // Initial fetch
+    fetchRealtimePrice();
+
+    // Update every 3 seconds
+    const interval = setInterval(fetchRealtimePrice, 3000);
+
+    return () => clearInterval(interval);
+  }, [symbol, mtfData?.currentTimeframe?.premiumDiscount]);
 
   const getTrendColor = () => {
     if (trend === "ALTA") return "text-success border-success";
@@ -295,22 +341,28 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
           </h3>
           
           <Card className={`p-3 border-2 ${
-            mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" 
+            (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" 
               ? "bg-destructive/10 border-destructive" 
-              : mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT"
+              : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
               ? "bg-success/10 border-success"
               : "bg-secondary border-border"
           }`}>
             <div className="flex justify-between items-center mb-3">
               <span className="text-xs text-muted-foreground">Posição no Range</span>
               <Badge className={
-                mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" 
+                (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" 
                   ? "bg-destructive" 
-                  : mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT"
+                  : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
                   ? "bg-success"
                   : "bg-secondary"
               }>
-                {mtfData.currentTimeframe.premiumDiscount.statusDescription}
+                {realtimeStatus === "PREMIUM" 
+                  ? "Zona de Venda (Premium)" 
+                  : realtimeStatus === "DISCOUNT"
+                  ? "Zona de Compra (Discount)"
+                  : realtimeStatus === "EQUILIBRIUM"
+                  ? "Equilíbrio"
+                  : mtfData.currentTimeframe.premiumDiscount.statusDescription}
               </Badge>
             </div>
             
@@ -324,7 +376,7 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
               <div>
                 <span className="text-muted-foreground">Atual:</span>
                 <div className="font-mono font-bold text-primary">
-                  ${mtfData.currentTimeframe.premiumDiscount.currentPrice.toFixed(2)}
+                  ${(realtimePrice || mtfData.currentTimeframe.premiumDiscount.currentPrice).toFixed(2)}
                 </div>
               </div>
               <div>
@@ -343,10 +395,10 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
               
               <div 
                 className="w-1.5 h-5 bg-primary border-2 border-foreground absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500 rounded-sm shadow-lg"
-                style={{ left: `${mtfData.currentTimeframe.premiumDiscount.rangePercentage}%` }}
+                style={{ left: `${realtimePercentage !== null ? realtimePercentage : mtfData.currentTimeframe.premiumDiscount.rangePercentage}%` }}
               >
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-primary whitespace-nowrap">
-                  {mtfData.currentTimeframe.premiumDiscount.rangePercentage.toFixed(0)}%
+                  {(realtimePercentage !== null ? realtimePercentage : mtfData.currentTimeframe.premiumDiscount.rangePercentage).toFixed(0)}%
                 </div>
               </div>
             </div>
