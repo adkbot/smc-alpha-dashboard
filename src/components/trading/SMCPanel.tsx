@@ -34,59 +34,36 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
   const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<"PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | null>(null);
 
-  // Generate real-time signals based on MTF analysis
+  // Generate signals based on POIs
   const signals = useMemo(() => {
-    if (!mtfData || !realtimePrice) return [];
+    if (!mtfData?.currentTimeframe?.pois || !realtimePrice) return [];
     
-    const { dominantBias, currentTimeframe } = mtfData;
-    const { premiumDiscount } = currentTimeframe;
-    
-    // Only generate signal if there's a clear bias and proper zone alignment
-    const canTrade = currentTimeframe.tradingOpportunity && currentTimeframe.alignedWithHigherTF;
-    
-    if (!canTrade || dominantBias.bias === "NEUTRO") return [];
-    
-    // LONG setup: Dominant bias is ALTA + price in DISCOUNT zone
-    if (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") {
-      const entry = realtimePrice;
-      const rangeSize = premiumDiscount.rangeHigh - premiumDiscount.rangeLow;
-      const sl = entry - (rangeSize * 0.15); // Stop loss 15% below entry
-      const tp = entry + (rangeSize * 0.50); // Take profit at 50% of range
-      const rr = Math.abs((tp - entry) / (entry - sl));
-      
-      return [{
-        id: Date.now(),
-        type: "COMPRA" as const,
-        entry,
-        sl,
-        tp,
-        rr: Math.round(rr * 10) / 10,
+    return mtfData.currentTimeframe.pois
+      .filter(poi => {
+        // Alta confluência (>= 75%)
+        if (poi.confluenceScore < 75) return false;
+        
+        // Preço próximo do POI (até 0.8% de distância)
+        const distance = Math.abs(realtimePrice - poi.price) / poi.price;
+        if (distance > 0.008) return false;
+        
+        // RR mínimo de 1:3
+        if (poi.riskReward < 3) return false;
+        
+        return true;
+      })
+      .map(poi => ({
+        id: poi.id,
+        type: poi.type === "bullish" ? "COMPRA" as const : "VENDA" as const,
+        entry: poi.entry,
+        sl: poi.stopLoss,
+        tp: poi.takeProfit,
+        rr: poi.riskReward,
         time: new Date().toLocaleTimeString(),
-        confidence: currentTimeframe.confidence
-      }];
-    }
-    
-    // SHORT setup: Dominant bias is BAIXA + price in PREMIUM zone
-    if (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM") {
-      const entry = realtimePrice;
-      const rangeSize = premiumDiscount.rangeHigh - premiumDiscount.rangeLow;
-      const sl = entry + (rangeSize * 0.15); // Stop loss 15% above entry
-      const tp = entry - (rangeSize * 0.50); // Take profit at 50% of range
-      const rr = Math.abs((entry - tp) / (sl - entry));
-      
-      return [{
-        id: Date.now(),
-        type: "VENDA" as const,
-        entry,
-        sl,
-        tp,
-        rr: Math.round(rr * 10) / 10,
-        time: new Date().toLocaleTimeString(),
-        confidence: currentTimeframe.confidence
-      }];
-    }
-    
-    return [];
+        confidence: poi.confluenceScore,
+        factors: poi.factors,
+        targetSwing: poi.targetSwing
+      }));
   }, [mtfData, realtimePrice]);
   
   // Real-time price state
@@ -373,6 +350,169 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
         </div>
       </div>
 
+      {/* POIs (Points of Interest) */}
+      {mtfData?.currentTimeframe?.pois && mtfData.currentTimeframe.pois.length > 0 && (
+        <div className="p-4 border-b border-border">
+          <h3 className="text-xs font-bold mb-3 flex items-center gap-2">
+            🎯 Points of Interest
+            <Badge variant="outline" className="text-[9px]">
+              {mtfData.currentTimeframe.pois.length}
+            </Badge>
+          </h3>
+          
+          <div className="space-y-2">
+            {mtfData.currentTimeframe.pois.slice(0, 3).map((poi) => (
+              <Card key={poi.id} className={`p-3 ${
+                poi.type === "bullish" 
+                  ? "border-success bg-success/10" 
+                  : "border-destructive bg-destructive/10"
+              }`}>
+                <div className="flex justify-between items-center mb-2">
+                  <Badge variant={poi.type === "bullish" ? "default" : "destructive"}>
+                    {poi.type === "bullish" ? "🟢 LONG" : "🔴 SHORT"}
+                  </Badge>
+                  <Badge variant="outline" className="bg-background text-[9px]">
+                    {poi.confluenceScore}% ⭐
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                  <div>
+                    <span className="text-muted-foreground text-[9px]">ENTRADA</span>
+                    <div className="font-mono font-bold">${poi.entry.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-[9px]">STOP LOSS</span>
+                    <div className="font-mono text-destructive">${poi.stopLoss.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-[9px]">TAKE PROFIT</span>
+                    <div className="font-mono text-success">${poi.takeProfit.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-[9px]">RISCO/RETORNO</span>
+                    <div className="font-mono font-bold text-accent">1:{poi.riskReward.toFixed(2)}</div>
+                  </div>
+                </div>
+                
+                <div className="text-[9px] text-muted-foreground mb-2 p-1 bg-background/50 rounded">
+                  🎯 Target: {poi.targetSwing.type === "high" ? "Topo" : "Fundo"} em ${poi.targetSwing.price.toFixed(2)}
+                </div>
+                
+                <div className="text-[9px] text-muted-foreground border-t pt-2">
+                  {poi.factors.join(" • ")}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fair Value Gaps */}
+      {mtfData?.currentTimeframe?.fvgs && mtfData.currentTimeframe.fvgs.length > 0 && (
+        <div className="p-4 border-b border-border">
+          <h3 className="text-xs font-bold mb-3">📊 Fair Value Gaps</h3>
+          
+          <div className="space-y-2">
+            {mtfData.currentTimeframe.fvgs.slice(0, 3).map((fvg, i) => (
+              <Card key={i} className={`p-2 ${
+                fvg.type === "bullish" 
+                  ? "bg-success/5 border-success/20" 
+                  : "bg-destructive/5 border-destructive/20"
+              }`}>
+                <div className="flex justify-between items-center">
+                  <Badge variant={fvg.type === "bullish" ? "default" : "destructive"}>
+                    {fvg.type === "bullish" ? "▲ Bullish FVG" : "▼ Bearish FVG"}
+                  </Badge>
+                  <span className="text-xs font-mono">${fvg.midpoint.toFixed(2)}</span>
+                </div>
+                
+                <div className="text-[9px] text-muted-foreground mt-1 flex justify-between">
+                  <span>Top: ${fvg.top.toFixed(2)}</span>
+                  <span>Bot: ${fvg.bottom.toFixed(2)}</span>
+                </div>
+                
+                {!fvg.isFilled && (
+                  <Badge variant="outline" className="mt-1 text-[8px]">
+                    🔓 Não Preenchido
+                  </Badge>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Order Blocks */}
+      {mtfData?.currentTimeframe?.orderBlocks && mtfData.currentTimeframe.orderBlocks.length > 0 && (
+        <div className="p-4 border-b border-border">
+          <h3 className="text-xs font-bold mb-3">📦 Order Blocks</h3>
+          
+          <div className="space-y-2">
+            {mtfData.currentTimeframe.orderBlocks.map((ob, i) => (
+              <Card key={i} className={`p-2 ${
+                ob.type === "bullish"
+                  ? "bg-success/5 border-success/20"
+                  : "bg-destructive/5 border-destructive/20"
+              }`}>
+                <div className="flex justify-between items-center mb-1">
+                  <Badge variant={ob.type === "bullish" ? "default" : "destructive"}>
+                    {ob.type === "bullish" ? "▲ Bullish OB" : "▼ Bearish OB"}
+                  </Badge>
+                  <div className="flex gap-1">
+                    <Badge variant="outline" className="text-[9px]">
+                      💪 {Math.round(ob.strength)}%
+                    </Badge>
+                    {ob.confirmed && (
+                      <Badge className="text-[8px] bg-accent">✓</Badge>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-[9px] text-muted-foreground">
+                  <div>Entry Zone: ${ob.midpoint.toFixed(2)}</div>
+                  <div className="flex justify-between mt-1">
+                    <span>Top: ${ob.top.toFixed(2)}</span>
+                    <span>Bot: ${ob.bottom.toFixed(2)}</span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Manipulation Zones Alert */}
+      {mtfData?.currentTimeframe?.manipulationZones && mtfData.currentTimeframe.manipulationZones.length > 0 && (
+        <div className="p-4 border-b border-destructive/50 bg-destructive/5">
+          <h3 className="text-xs font-bold mb-2 text-destructive flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Zonas de Manipulação Detectadas
+          </h3>
+          
+          <div className="space-y-2">
+            {mtfData.currentTimeframe.manipulationZones.map((zone, i) => (
+              <Card key={i} className="p-2 bg-destructive/10 border-destructive/30">
+                <div className="flex justify-between items-center">
+                  <Badge variant="destructive" className="text-[9px]">
+                    {zone.type === "equal_highs" ? "= Topos" : zone.type === "equal_lows" ? "= Fundos" : "Sweep"}
+                  </Badge>
+                  <span className="text-xs font-mono">${zone.price.toFixed(2)}</span>
+                </div>
+                
+                <div className="text-[9px] text-muted-foreground mt-1">
+                  🚫 Evitar operações {zone.danger >= 80 ? "CRÍTICO" : "nesta área"}
+                </div>
+              </Card>
+            ))}
+          </div>
+          
+          <p className="text-[9px] text-destructive/80 mt-2">
+            ⚠️ Estas zonas atraem liquidez e podem causar reversões bruscas
+          </p>
+        </div>
+      )}
+
       {/* Range & Filtro */}
       {mtfLoading ? (
         <div className="p-4 border-b border-border">
@@ -496,72 +636,83 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             Sinais Ativos
           </h3>
+          {signals.length > 0 && (
+            <Badge variant="default" className="animate-pulse text-[9px]">
+              {signals.length}
+            </Badge>
+          )}
         </div>
         
         {signals.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {signals.map((signal) => (
               <Card
                 key={signal.id}
-                className={`p-3 border-l-4 ${
+                className={`p-3 border-2 ${
                   signal.type === "COMPRA"
-                    ? "border-l-success bg-success/5"
-                    : "border-l-destructive bg-destructive/5"
-                } animate-pulse-slow`}
+                    ? "border-success bg-success/10"
+                    : "border-destructive bg-destructive/10"
+                }`}
               >
                 <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={signal.type === "COMPRA" ? "default" : "destructive"}
-                      className="text-xs"
-                    >
-                      {signal.type === "COMPRA" ? (
-                        <TrendingUp className="w-3 h-3 mr-1" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3 mr-1" />
-                      )}
-                      {signal.type}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px]">
-                      {signal.confidence}% confiança
-                    </Badge>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono">
-                    {signal.time}
-                  </span>
+                  <Badge 
+                    variant={signal.type === "COMPRA" ? "default" : "destructive"}
+                    className="text-sm font-bold"
+                  >
+                    {signal.type === "COMPRA" ? "🟢 COMPRA" : "🔴 VENDA"}
+                  </Badge>
+                  <Badge variant="outline" className="bg-background">
+                    {signal.confidence}% ⭐
+                  </Badge>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-y-1 text-xs">
-                  <span className="text-muted-foreground">Entrada:</span>
-                  <span className="text-foreground font-mono font-bold">
-                    ${signal.entry.toFixed(2)}
-                  </span>
-                  
-                  <span className="text-muted-foreground">Stop:</span>
-                  <span className="text-destructive font-mono">
-                    ${signal.sl.toFixed(2)}
-                  </span>
-                  
-                  <span className="text-muted-foreground">Alvo:</span>
-                  <span className="text-success font-mono">
-                    ${signal.tp.toFixed(2)}
-                  </span>
-                  
-                  <span className="text-muted-foreground">R:R:</span>
-                  <span className="text-primary font-mono font-bold">
-                    1:{signal.rr}
-                  </span>
+                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                  <div className="bg-background/50 p-2 rounded">
+                    <div className="text-muted-foreground text-[9px]">ENTRADA</div>
+                    <div className="font-mono font-bold text-sm">${signal.entry.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-background/50 p-2 rounded">
+                    <div className="text-muted-foreground text-[9px]">STOP LOSS</div>
+                    <div className="font-mono text-destructive text-sm">${signal.sl.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-background/50 p-2 rounded">
+                    <div className="text-muted-foreground text-[9px]">TAKE PROFIT</div>
+                    <div className="font-mono text-success text-sm">${signal.tp.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-accent/20 p-2 rounded">
+                    <div className="text-muted-foreground text-[9px]">RISCO/RETORNO</div>
+                    <div className="font-mono font-bold text-accent text-sm">1:{signal.rr.toFixed(2)}</div>
+                  </div>
+                </div>
+                
+                {signal.targetSwing && (
+                  <div className="text-[9px] bg-background/70 p-2 rounded mb-2">
+                    🎯 Alvo: {signal.targetSwing.type === "high" ? "Topo" : "Fundo"} estrutural em ${signal.targetSwing.price.toFixed(2)}
+                  </div>
+                )}
+                
+                {signal.factors && (
+                  <div className="text-[9px] text-muted-foreground border-t pt-2">
+                    <div className="font-semibold mb-1">Confluência:</div>
+                    {signal.factors.join(" • ")}
+                  </div>
+                )}
+                
+                <div className="text-[8px] text-muted-foreground/60 mt-2">
+                  Detectado às {signal.time}
                 </div>
               </Card>
             ))}
           </div>
         ) : (
-          <Card className="p-4 bg-muted/50 border-dashed">
-            <div className="text-center text-muted-foreground text-xs">
-              <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="font-medium mb-1">Aguardando Setup</p>
-              <p className="text-[10px]">
-                Monitorando estrutura de mercado para identificar oportunidades de alta probabilidade
+          <Card className="p-4 bg-muted">
+            <div className="flex flex-col items-center justify-center text-center gap-2">
+              <Activity className="h-8 w-8 text-muted-foreground/50" />
+              <p className="text-xs text-muted-foreground">
+                Aguardando Setup com Confluência
+              </p>
+              <p className="text-[9px] text-muted-foreground/60">
+                POIs sendo monitorados em tempo real
               </p>
             </div>
           </Card>
@@ -571,7 +722,7 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
       {/* Footer */}
       <div className="p-2 border-t border-border text-center">
         <span className="text-[10px] text-muted-foreground">
-          SMC Engine v2.0 • Powered by Gemini & Binance
+          SMC Engine v3.0 PRO • TP Dinâmico • Powered by Gemini & Binance
         </span>
       </div>
     </div>

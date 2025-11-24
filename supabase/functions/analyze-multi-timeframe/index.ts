@@ -39,6 +39,54 @@ interface PremiumDiscountResult {
   statusDescription: string;
 }
 
+interface FVG {
+  index: number;
+  type: "bullish" | "bearish";
+  top: number;
+  bottom: number;
+  midpoint: number;
+  size: number;
+  isFilled: boolean;
+}
+
+interface OrderBlock {
+  index: number;
+  type: "bullish" | "bearish";
+  top: number;
+  bottom: number;
+  midpoint: number;
+  volume: number;
+  strength: number;
+  confirmed: boolean;
+}
+
+interface ManipulationZone {
+  type: "equal_highs" | "equal_lows" | "liquidity_sweep";
+  price: number;
+  startIndex: number;
+  endIndex: number;
+  danger: number;
+}
+
+interface TargetSwing {
+  type: "high" | "low";
+  price: number;
+  index: number;
+}
+
+interface POI {
+  id: string;
+  price: number;
+  type: "bullish" | "bearish";
+  confluenceScore: number;
+  factors: string[];
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  targetSwing: TargetSwing;
+}
+
 // Detecta swing points (highs e lows) nos candles
 function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): PremiumDiscountResult {
   const currentPrice = candles[candles.length - 1].close;
@@ -399,6 +447,354 @@ function analyzeWithContext(
   };
 }
 
+// Detecta Fair Value Gaps (FVG)
+function detectFVG(candles: Candle[]): FVG[] {
+  const fvgs: FVG[] = [];
+  const currentPrice = candles[candles.length - 1].close;
+  
+  for (let i = 1; i < candles.length - 1; i++) {
+    // Bullish FVG: high[i-1] < low[i+1]
+    if (candles[i - 1].high < candles[i + 1].low) {
+      const bottom = candles[i - 1].high;
+      const top = candles[i + 1].low;
+      const isFilled = currentPrice >= bottom && currentPrice <= top;
+      
+      fvgs.push({
+        index: i,
+        type: "bullish",
+        bottom,
+        top,
+        midpoint: (bottom + top) / 2,
+        size: top - bottom,
+        isFilled
+      });
+    }
+    
+    // Bearish FVG: low[i-1] > high[i+1]
+    if (candles[i - 1].low > candles[i + 1].high) {
+      const bottom = candles[i + 1].high;
+      const top = candles[i - 1].low;
+      const isFilled = currentPrice >= bottom && currentPrice <= top;
+      
+      fvgs.push({
+        index: i,
+        type: "bearish",
+        bottom,
+        top,
+        midpoint: (bottom + top) / 2,
+        size: top - bottom,
+        isFilled
+      });
+    }
+  }
+  
+  // Retornar apenas os 5 FVGs mais recentes não preenchidos
+  return fvgs
+    .filter(fvg => !fvg.isFilled)
+    .slice(-5);
+}
+
+// Detecta Order Blocks
+function detectOrderBlocks(
+  candles: Candle[], 
+  swings: SwingPoint[],
+  bosIndexes: number[]
+): OrderBlock[] {
+  const orderBlocks: OrderBlock[] = [];
+  
+  for (const bosIndex of bosIndexes) {
+    const swing = swings.find(s => s.index === bosIndex);
+    if (!swing) continue;
+    
+    if (swing.type === "high") {
+      // BOS de alta: buscar último candle bearish antes do BOS
+      for (let i = bosIndex - 1; i >= Math.max(0, bosIndex - 10); i--) {
+        if (candles[i].close < candles[i].open) {
+          const avgSize = candles.slice(Math.max(0, i - 20), i)
+            .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i);
+          
+          const candleSize = Math.abs(candles[i].high - candles[i].low);
+          const sizeScore = (candleSize / avgSize) * 50;
+          const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
+          const strength = Math.min(100, sizeScore + volumeScore);
+          
+          // Verificar confirmação: preço testou a zona e reagiu
+          const currentPrice = candles[candles.length - 1].close;
+          const confirmed = currentPrice > candles[i].high;
+          
+          orderBlocks.push({
+            index: i,
+            type: "bullish",
+            top: candles[i].high,
+            bottom: candles[i].low,
+            midpoint: (candles[i].high + candles[i].low) / 2,
+            volume: candles[i].volume,
+            strength,
+            confirmed
+          });
+          break;
+        }
+      }
+    } else {
+      // BOS de baixa: buscar último candle bullish antes do BOS
+      for (let i = bosIndex - 1; i >= Math.max(0, bosIndex - 10); i--) {
+        if (candles[i].close > candles[i].open) {
+          const avgSize = candles.slice(Math.max(0, i - 20), i)
+            .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i);
+          
+          const candleSize = Math.abs(candles[i].high - candles[i].low);
+          const sizeScore = (candleSize / avgSize) * 50;
+          const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
+          const strength = Math.min(100, sizeScore + volumeScore);
+          
+          const currentPrice = candles[candles.length - 1].close;
+          const confirmed = currentPrice < candles[i].low;
+          
+          orderBlocks.push({
+            index: i,
+            type: "bearish",
+            top: candles[i].high,
+            bottom: candles[i].low,
+            midpoint: (candles[i].high + candles[i].low) / 2,
+            volume: candles[i].volume,
+            strength,
+            confirmed
+          });
+          break;
+        }
+      }
+    }
+  }
+  
+  return orderBlocks
+    .sort((a, b) => b.strength - a.strength)
+    .slice(0, 3);
+}
+
+// Detecta Zonas de Manipulação
+function detectManipulationZones(
+  candles: Candle[],
+  swings: SwingPoint[]
+): ManipulationZone[] {
+  const zones: ManipulationZone[] = [];
+  const priceThreshold = 0.002; // 0.2% de tolerância
+  
+  const highs = swings.filter(s => s.type === "high");
+  const lows = swings.filter(s => s.type === "low");
+  
+  // Detectar Equal Highs
+  for (let i = 0; i < highs.length - 1; i++) {
+    for (let j = i + 1; j < highs.length; j++) {
+      const priceDiff = Math.abs(highs[i].price - highs[j].price) / highs[i].price;
+      if (priceDiff < priceThreshold) {
+        zones.push({
+          type: "equal_highs",
+          price: (highs[i].price + highs[j].price) / 2,
+          startIndex: highs[i].index,
+          endIndex: highs[j].index,
+          danger: 80
+        });
+      }
+    }
+  }
+  
+  // Detectar Equal Lows
+  for (let i = 0; i < lows.length - 1; i++) {
+    for (let j = i + 1; j < lows.length; j++) {
+      const priceDiff = Math.abs(lows[i].price - lows[j].price) / lows[i].price;
+      if (priceDiff < priceThreshold) {
+        zones.push({
+          type: "equal_lows",
+          price: (lows[i].price + lows[j].price) / 2,
+          startIndex: lows[i].index,
+          endIndex: lows[j].index,
+          danger: 80
+        });
+      }
+    }
+  }
+  
+  return zones.slice(-5);
+}
+
+// Calcula TP Dinâmico baseado em swing estrutural
+function calculateDynamicTP(
+  entry: number,
+  stopLoss: number,
+  type: "bullish" | "bearish",
+  swings: SwingPoint[],
+  candles: Candle[]
+): { takeProfit: number; riskReward: number; targetSwing: TargetSwing } {
+  const risk = Math.abs(entry - stopLoss);
+  
+  if (type === "bullish") {
+    // Buscar swing highs acima do entry
+    const targetHighs = swings
+      .filter(s => s.type === "high" && s.price > entry)
+      .sort((a, b) => a.price - b.price);
+    
+    // Tentar encontrar swing com RR entre 2.0 e 15.0
+    for (const swing of targetHighs) {
+      const targetPrice = swing.price * 0.995; // -0.5% margem
+      const reward = Math.abs(targetPrice - entry);
+      const rr = reward / risk;
+      
+      if (rr >= 2.0 && rr <= 15.0) {
+        return {
+          takeProfit: targetPrice,
+          riskReward: rr,
+          targetSwing: {
+            type: "high",
+            price: swing.price,
+            index: swing.index
+          }
+        };
+      }
+    }
+  } else {
+    // Buscar swing lows abaixo do entry
+    const targetLows = swings
+      .filter(s => s.type === "low" && s.price < entry)
+      .sort((a, b) => b.price - a.price);
+    
+    for (const swing of targetLows) {
+      const targetPrice = swing.price * 1.005; // +0.5% margem
+      const reward = Math.abs(entry - targetPrice);
+      const rr = reward / risk;
+      
+      if (rr >= 2.0 && rr <= 15.0) {
+        return {
+          takeProfit: targetPrice,
+          riskReward: rr,
+          targetSwing: {
+            type: "low",
+            price: swing.price,
+            index: swing.index
+          }
+        };
+      }
+    }
+  }
+  
+  // Se não encontrar swing adequado, usar RR conservador 1:3
+  const conservativeTP = type === "bullish" 
+    ? entry + (risk * 3)
+    : entry - (risk * 3);
+  
+  const nearestSwing = type === "bullish"
+    ? swings.filter(s => s.type === "high" && s.price > entry).sort((a, b) => a.price - b.price)[0]
+    : swings.filter(s => s.type === "low" && s.price < entry).sort((a, b) => b.price - a.price)[0];
+  
+  return {
+    takeProfit: conservativeTP,
+    riskReward: 3.0,
+    targetSwing: nearestSwing ? {
+      type: nearestSwing.type,
+      price: nearestSwing.price,
+      index: nearestSwing.index
+    } : {
+      type: type === "bullish" ? "high" : "low",
+      price: conservativeTP,
+      index: candles.length - 1
+    }
+  };
+}
+
+// Sistema de POI (Points of Interest)
+function calculatePOIs(
+  candles: Candle[],
+  fvgs: FVG[],
+  orderBlocks: OrderBlock[],
+  premiumDiscount: PremiumDiscountResult,
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  manipulationZones: ManipulationZone[],
+  swings: SwingPoint[]
+): POI[] {
+  const pois: POI[] = [];
+  
+  for (const fvg of fvgs) {
+    // Verificar alinhamento com viés dominante
+    if (fvg.type === "bullish" && dominantBias.bias !== "ALTA") continue;
+    if (fvg.type === "bearish" && dominantBias.bias !== "BAIXA") continue;
+    
+    // Verificar posição no range Premium/Discount
+    if (fvg.type === "bullish" && premiumDiscount.status !== "DISCOUNT") continue;
+    if (fvg.type === "bearish" && premiumDiscount.status !== "PREMIUM") continue;
+    
+    const factors: string[] = [];
+    let score = 40;
+    
+    factors.push(fvg.type === "bullish" ? "FVG Bullish" : "FVG Bearish");
+    factors.push(premiumDiscount.status === "DISCOUNT" ? "Zona Discount" : "Zona Premium");
+    factors.push(dominantBias.bias === "ALTA" ? "Viés de Alta" : "Viés de Baixa");
+    
+    // Verificar Order Block próximo
+    const nearbyOB = orderBlocks.find(ob => 
+      ob.type === fvg.type && 
+      Math.abs(ob.midpoint - fvg.midpoint) / fvg.midpoint < 0.01
+    );
+    
+    if (nearbyOB) {
+      factors.push(`Order Block Confluente (${Math.round(nearbyOB.strength)}%)`);
+      score += 30;
+    }
+    
+    // Verificar distância de zonas de manipulação
+    const nearManipulation = manipulationZones.some(zone => 
+      Math.abs(zone.price - fvg.midpoint) / fvg.midpoint < 0.005
+    );
+    
+    if (nearManipulation) {
+      score -= 30;
+    } else {
+      factors.push("Longe de Manipulação");
+      score += 20;
+    }
+    
+    // Só criar POI se score >= 70
+    if (score < 70) continue;
+    
+    // Calcular entry (50% da zona)
+    const entry = nearbyOB 
+      ? (fvg.midpoint + nearbyOB.midpoint) / 2
+      : fvg.midpoint;
+    
+    // Calcular Stop Loss técnico
+    const stopLoss = fvg.type === "bullish"
+      ? Math.min(fvg.bottom, nearbyOB?.bottom || Infinity) - (fvg.size * 0.1)
+      : Math.max(fvg.top, nearbyOB?.top || 0) + (fvg.size * 0.1);
+    
+    // Calcular TP Dinâmico
+    const { takeProfit, riskReward, targetSwing } = calculateDynamicTP(
+      entry,
+      stopLoss,
+      fvg.type,
+      swings,
+      candles
+    );
+    
+    factors.push(`RR Dinâmico 1:${riskReward.toFixed(1)}`);
+    
+    pois.push({
+      id: `poi_${Date.now()}_${fvg.index}`,
+      price: entry,
+      type: fvg.type,
+      confluenceScore: score,
+      factors,
+      entry,
+      stopLoss,
+      takeProfit,
+      riskReward,
+      targetSwing
+    });
+  }
+  
+  return pois
+    .filter(poi => poi.confluenceScore >= 70)
+    .sort((a, b) => b.confluenceScore - a.confluenceScore)
+    .slice(0, 5);
+}
+
 // Buscar dados da Binance
 async function fetchBinanceKlines(symbol: string, interval: string, limit = 100): Promise<Candle[]> {
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
@@ -455,10 +851,49 @@ serve(async (req) => {
 
     // PASSO 3: Analisar timeframe atual COM CONTEXTO
     console.log(`🔍 Analisando ${currentTimeframe} com contexto superior...`);
-    const currentTFCandles = await fetchBinanceKlines(symbol, currentTimeframe, 100);
+    const currentTFCandles = await fetchBinanceKlines(symbol, currentTimeframe, 200);
     const currentTFSwings = detectSwingPoints(currentTFCandles);
     const currentTFLocalAnalysis = detectBOSandCHOCH(currentTFCandles, currentTFSwings);
     const premiumDiscount = calculatePremiumDiscount(currentTFCandles, currentTFSwings);
+    
+    // NOVAS DETECÇÕES SMC
+    console.log("🔍 Detectando estruturas SMC...");
+    const fvgs = detectFVG(currentTFCandles);
+    console.log(`  📊 FVGs detectados: ${fvgs.length}`);
+    
+    // Extrair índices dos BOS para detectar Order Blocks
+    const bosIndexes = currentTFSwings
+      .filter(s => {
+        if (currentTFLocalAnalysis.trend === "ALTA" && s.type === "high") return true;
+        if (currentTFLocalAnalysis.trend === "BAIXA" && s.type === "low") return true;
+        return false;
+      })
+      .map(s => s.index);
+    
+    const orderBlocks = detectOrderBlocks(currentTFCandles, currentTFSwings, bosIndexes);
+    console.log(`  📦 Order Blocks encontrados: ${orderBlocks.length}`);
+    
+    const manipulationZones = detectManipulationZones(currentTFCandles, currentTFSwings);
+    console.log(`  🚫 Zonas de manipulação: ${manipulationZones.length}`);
+    
+    const pois = calculatePOIs(
+      currentTFCandles,
+      fvgs,
+      orderBlocks,
+      premiumDiscount,
+      dominantBias,
+      manipulationZones,
+      currentTFSwings
+    );
+    console.log(`  🎯 POIs gerados: ${pois.length}`);
+    
+    pois.forEach((poi, i) => {
+      console.log(`  POI #${i+1}: ${poi.type} @ $${poi.price.toFixed(2)}`);
+      console.log(`    - Confluência: ${poi.confluenceScore}%`);
+      console.log(`    - RR: 1:${poi.riskReward.toFixed(2)}`);
+      console.log(`    - TP: $${poi.takeProfit.toFixed(2)} (alvo: ${poi.targetSwing.type} @ $${poi.targetSwing.price.toFixed(2)})`);
+    });
+    
     const currentTFAnalysis = analyzeWithContext(
       currentTFLocalAnalysis,
       dominantBias,
@@ -497,6 +932,12 @@ serve(async (req) => {
         timeframe: currentTimeframe,
         ...currentTFAnalysis,
         premiumDiscount,
+        
+        // ESTRUTURAS SMC
+        fvgs,
+        orderBlocks,
+        manipulationZones,
+        pois,
       },
       
       // OVERVIEW DE TODOS OS TIMEFRAMES
