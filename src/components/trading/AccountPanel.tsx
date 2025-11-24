@@ -2,17 +2,70 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Wallet, Settings } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 export const AccountPanel = () => {
-  const [balance] = useState(10000.00);
-  const [pnl] = useState(450.23);
-  const [pnlPercent] = useState(4.5);
-  const [trades] = useState({ wins: 23, losses: 7, total: 30 });
+  const { user } = useAuth();
+  const [balance, setBalance] = useState(0);
+  const [pnl, setPnl] = useState(0);
+  const [pnlPercent, setPnlPercent] = useState(0);
+  const [paperMode, setPaperMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const winRate = ((trades.wins / trades.total) * 100).toFixed(1);
+  const fetchAccountData = async () => {
+    if (!user) return;
+
+    try {
+      // 1. Buscar balance de user_settings
+      const { data: settings } = await supabase
+        .from("user_settings")
+        .select("balance, paper_mode")
+        .eq("user_id", user.id)
+        .single();
+
+      const currentBalance = settings?.balance || 0;
+      setBalance(currentBalance);
+      setPaperMode(settings?.paper_mode || true);
+
+      // 2. Buscar PnL das operações fechadas hoje
+      const today = new Date().toISOString().split('T')[0];
+      const { data: todayOps } = await supabase
+        .from("operations")
+        .select("pnl")
+        .eq("user_id", user.id)
+        .gte("entry_time", `${today}T00:00:00`)
+        .lte("entry_time", `${today}T23:59:59`);
+
+      const closedPnL = todayOps?.reduce((sum, op) => sum + (op.pnl || 0), 0) || 0;
+
+      // 3. Buscar PnL das posições abertas
+      const { data: activePositions } = await supabase
+        .from("active_positions")
+        .select("current_pnl")
+        .eq("user_id", user.id);
+
+      const activePnL = activePositions?.reduce((sum, pos) => sum + (pos.current_pnl || 0), 0) || 0;
+
+      // 4. Calcular PnL total e percentual
+      const totalPnL = closedPnL + activePnL;
+      setPnl(totalPnL);
+      setPnlPercent(currentBalance > 0 ? (totalPnL / currentBalance) * 100 : 0);
+
+    } catch (error) {
+      console.error("Erro ao buscar dados da conta:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchAccountData();
+    
+    // Atualizar a cada 10 segundos
+    const interval = setInterval(fetchAccountData, 10000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   return (
     <div className="p-4 border-b border-border bg-card/50">
@@ -36,11 +89,11 @@ export const AccountPanel = () => {
       </div>
 
       {/* Balance Card */}
-      <Card className="p-4 mb-3 bg-gradient-to-br from-card to-secondary border-border">
+      <Card className="p-4 bg-gradient-to-br from-card to-secondary border-border">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-muted-foreground uppercase">Saldo Total</span>
           <Badge variant="outline" className="text-xs">
-            Binance
+            {paperMode ? "Paper Mode" : "Binance"}
           </Badge>
         </div>
         <div className="flex items-end gap-2">
@@ -55,40 +108,11 @@ export const AccountPanel = () => {
             <TrendingDown className="w-4 h-4 text-destructive" />
           )}
           <span className={`text-sm font-mono ${pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-            ${Math.abs(pnl).toFixed(2)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent}%)
+            ${Math.abs(pnl).toFixed(2)} ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
           </span>
           <span className="text-xs text-muted-foreground">hoje</span>
         </div>
       </Card>
-
-      {/* Trading Stats */}
-      <div className="grid grid-cols-3 gap-2">
-        <Card className="p-3 bg-secondary border-border">
-          <div className="text-xs text-muted-foreground mb-1">Win Rate</div>
-          <div className="text-lg font-bold text-success">{winRate}%</div>
-        </Card>
-        
-        <Card className="p-3 bg-secondary border-border">
-          <div className="text-xs text-muted-foreground mb-1">Wins</div>
-          <div className="text-lg font-bold text-success">{trades.wins}</div>
-        </Card>
-        
-        <Card className="p-3 bg-secondary border-border">
-          <div className="text-xs text-muted-foreground mb-1">Losses</div>
-          <div className="text-lg font-bold text-destructive">{trades.losses}</div>
-        </Card>
-      </div>
-
-      {/* Sync Status */}
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Última sincronização</span>
-        <div className="flex items-center gap-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></div>
-          <span className="text-foreground font-mono">
-            {new Date().toLocaleTimeString()}
-          </span>
-        </div>
-      </div>
     </div>
   );
 };
