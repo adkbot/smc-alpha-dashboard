@@ -91,18 +91,16 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { error } = await supabase
+    const { error } = await supabase
         .from("user_settings")
-        .upsert({
-          user_id: user.id,
+        .update({
           balance: parseFloat(balance),
           leverage: parseInt(leverage),
           risk_per_trade: parseFloat(riskPerTrade),
           max_positions: parseInt(maxPositions),
           paper_mode: paperMode,
-        }, {
-          onConflict: 'user_id'
-        });
+        })
+        .eq("user_id", user.id);
 
       if (error) throw error;
 
