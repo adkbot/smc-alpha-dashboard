@@ -3,6 +3,9 @@ import { TradingChart } from "@/components/trading/TradingChart";
 import { AccountPanel } from "@/components/trading/AccountPanel";
 import { SMCPanel } from "@/components/trading/SMCPanel";
 import { TopBar } from "@/components/trading/TopBar";
+import { BotControlPanel } from "@/components/trading/BotControlPanel";
+import { ActivePositionsPanel } from "@/components/trading/ActivePositionsPanel";
+import { TradingLogsPanel } from "@/components/trading/TradingLogsPanel";
 
 const Dashboard = () => {
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -24,8 +27,11 @@ const Dashboard = () => {
         
         <div className="w-96 flex flex-col border-l border-border">
           <div className="h-full overflow-y-auto pb-4">
+            <BotControlPanel />
+            <ActivePositionsPanel />
             <AccountPanel />
             <SMCPanel symbol={symbol} interval={interval} />
+            <TradingLogsPanel />
           </div>
         </div>
       </div>
