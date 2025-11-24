@@ -24,7 +24,7 @@ export const AccountPanel = () => {
         .from("user_settings")
         .select("balance, paper_mode")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       const currentBalance = settings?.balance || 0;
       setBalance(currentBalance);
