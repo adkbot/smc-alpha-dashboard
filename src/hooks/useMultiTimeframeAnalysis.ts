@@ -30,6 +30,54 @@ interface PremiumDiscount {
   statusDescription: string;
 }
 
+interface FVG {
+  index: number;
+  type: "bullish" | "bearish";
+  top: number;
+  bottom: number;
+  midpoint: number;
+  size: number;
+  isFilled: boolean;
+}
+
+interface OrderBlock {
+  index: number;
+  type: "bullish" | "bearish";
+  top: number;
+  bottom: number;
+  midpoint: number;
+  volume: number;
+  strength: number;
+  confirmed: boolean;
+}
+
+interface ManipulationZone {
+  type: "equal_highs" | "equal_lows" | "liquidity_sweep";
+  price: number;
+  startIndex: number;
+  endIndex: number;
+  danger: number;
+}
+
+interface TargetSwing {
+  type: "high" | "low";
+  price: number;
+  index: number;
+}
+
+interface POI {
+  id: string;
+  price: number;
+  type: "bullish" | "bearish";
+  confluenceScore: number;
+  factors: string[];
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  targetSwing: TargetSwing;
+}
+
 interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   timeframe: string;
   interpretation: string;
@@ -37,6 +85,10 @@ interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   tradingOpportunity: boolean;
   reasoning: string;
   premiumDiscount: PremiumDiscount;
+  fvgs: FVG[];
+  orderBlocks: OrderBlock[];
+  manipulationZones: ManipulationZone[];
+  pois: POI[];
 }
 
 interface MTFAnalysis {
