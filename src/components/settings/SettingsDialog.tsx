@@ -100,6 +100,8 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           risk_per_trade: parseFloat(riskPerTrade),
           max_positions: parseInt(maxPositions),
           paper_mode: paperMode,
+        }, {
+          onConflict: 'user_id'
         });
 
       if (error) throw error;
