@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface BOSCHOCHData {
   trend: "ALTA" | "BAIXA" | "NEUTRO";
@@ -99,6 +100,66 @@ export const useMultiTimeframeAnalysis = (
 
     return () => clearInterval(interval);
   }, [symbol, currentTimeframe, JSON.stringify(timeframes)]);
+
+  // Auto-executar sinais se bot estiver rodando
+  useEffect(() => {
+    const checkAndExecuteSignals = async () => {
+      if (!data?.currentTimeframe?.tradingOpportunity) return;
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: settings } = await supabase
+          .from("user_settings")
+          .select("bot_status")
+          .eq("user_id", user.id)
+          .single();
+
+        if (settings?.bot_status === "running") {
+          const direction = data.currentTimeframe.trend === "ALTA" ? "LONG" : "SHORT";
+          const currentPrice = data.currentTimeframe.premiumDiscount.currentPrice;
+          
+          // Calcular SL e TP básicos (pode ser ajustado)
+          const slDistance = currentPrice * 0.01; // 1% de distância
+          const rr = 2.0;
+          
+          const stopLoss = direction === "LONG" 
+            ? currentPrice - slDistance 
+            : currentPrice + slDistance;
+          
+          const takeProfit = direction === "LONG"
+            ? currentPrice + (slDistance * rr)
+            : currentPrice - (slDistance * rr);
+
+          const { error } = await supabase.functions.invoke("execute-order", {
+            body: {
+              asset: symbol,
+              direction,
+              entry_price: currentPrice,
+              stop_loss: stopLoss,
+              take_profit: takeProfit,
+              risk_reward: rr,
+              signal_data: data.currentTimeframe,
+            },
+          });
+
+          if (error) {
+            console.error("Erro ao executar ordem automaticamente:", error);
+          } else {
+            toast({
+              title: `✅ Ordem ${direction} executada`,
+              description: `${symbol} @ $${currentPrice.toFixed(2)}`,
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao verificar e executar sinais:", error);
+      }
+    };
+
+    checkAndExecuteSignals();
+  }, [data?.currentTimeframe?.tradingOpportunity, symbol]);
 
   return { data, loading, error, refresh: fetchAnalysis };
 };
