@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -39,6 +39,12 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
 
   // Multi-Timeframe Analysis
   const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol, interval);
+
+  // Debug logs
+  useEffect(() => {
+    console.log("🔍 MTF Data recebida:", mtfData);
+    console.log("📊 Premium/Discount:", mtfData?.currentTimeframe?.premiumDiscount);
+  }, [mtfData]);
 
   const getTrendColor = () => {
     if (trend === "ALTA") return "text-success border-success";
@@ -276,7 +282,13 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
       </div>
 
       {/* Range & Filtro */}
-      {mtfData?.currentTimeframe?.premiumDiscount && (
+      {mtfLoading ? (
+        <div className="p-4 border-b border-border">
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : mtfData?.currentTimeframe?.premiumDiscount && 
+         typeof mtfData.currentTimeframe.premiumDiscount === 'object' &&
+         mtfData.currentTimeframe.premiumDiscount.currentPrice > 0 ? (
         <div className="p-4 border-b border-border">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
             Range & Filtro
@@ -366,6 +378,14 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
                mtfData.dominantBias.bias === "BAIXA" && (
                 "⚠️ Preço em discount mas viés é de baixa - Aguardar rejeição em premium"
               )}
+            </p>
+          </Card>
+        </div>
+      ) : (
+        <div className="p-4 border-b border-border">
+          <Card className="p-3 bg-muted">
+            <p className="text-xs text-muted-foreground text-center">
+              ⏳ Calculando Range & Filtro...
             </p>
           </Card>
         </div>
