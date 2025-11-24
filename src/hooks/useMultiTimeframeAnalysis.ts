@@ -91,7 +91,7 @@ interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   pois: POI[];
 }
 
-interface MTFAnalysis {
+export interface MTFAnalysis {
   symbol: string;
   timestamp: string;
   higherTimeframes: {
