@@ -87,7 +87,7 @@ export const ActivePositionsPanel = () => {
         Posições Abertas ({positions.length})
       </h3>
 
-      <ScrollArea className="h-[250px]">
+      <ScrollArea className="h-[180px]">
         {positions.map((pos) => {
           const pnlPercent = ((pos.current_pnl / (pos.entry_price * 1)) * 100);
           const isProfitable = pos.current_pnl >= 0;
