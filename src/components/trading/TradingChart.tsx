@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import type { MTFAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { TradingChartOverlay } from "./TradingChartOverlay";
 
 interface TradingChartProps {
   symbol: string;
   interval: string;
+  smcData?: MTFAnalysis | null;
 }
 
 // Converter intervalo do formato "15m" para formato TradingView "15"
@@ -24,7 +27,7 @@ const convertInterval = (interval: string): string => {
   return mapping[interval] || interval;
 };
 
-export const TradingChart = ({ symbol, interval }: TradingChartProps) => {
+export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,6 +139,12 @@ export const TradingChart = ({ symbol, interval }: TradingChartProps) => {
 
       console.log("📌 Widget criado, referência salva");
 
+      // Aguardar widget estar pronto
+      widgetRef.current.onChartReady(() => {
+        console.log("✅ Gráfico TradingView pronto!");
+        setIsLoading(false);
+      });
+
       // ESTRATÉGIA 1: Detectar quando iframe do TradingView aparecer
       const checkInterval = setInterval(() => {
         const iframe = containerRef.current?.querySelector('iframe');
@@ -164,8 +173,18 @@ export const TradingChart = ({ symbol, interval }: TradingChartProps) => {
     }
   }, [scriptLoaded, symbol, interval]);
 
+  // Effect para desenhar estruturas SMC quando dados mudarem
+  useEffect(() => {
+    if (widgetRef.current && smcData && !isLoading) {
+      console.log("🔄 Dados SMC atualizados, redesenhando estruturas");
+    }
+  }, [smcData, isLoading]);
+
   return (
     <div className="relative w-full h-full bg-background">
+      <TradingChartOverlay 
+        smcData={smcData || null}
+      />
       {isLoading && !hasError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/95 z-10 backdrop-blur-sm">
           <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
