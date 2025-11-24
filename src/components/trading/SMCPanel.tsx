@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -25,17 +25,6 @@ const getTrendColorClass = (trend: string) => {
 
 export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
   const [trend] = useState<"ALTA" | "BAIXA" | "NEUTRO">("ALTA");
-  const [signals] = useState([
-    {
-      id: 1,
-      type: "COMPRA",
-      entry: 42350.50,
-      sl: 42100.00,
-      tp: 42975.00,
-      rr: 2.5,
-      time: new Date().toLocaleTimeString(),
-    }
-  ]);
 
   // Multi-Timeframe Analysis
   const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol, interval);
@@ -44,6 +33,63 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
   const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
   const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<"PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | null>(null);
+
+  // Generate real-time signals based on MTF analysis
+  const signals = useMemo(() => {
+    if (!mtfData || !realtimePrice) return [];
+    
+    const { dominantBias, currentTimeframe } = mtfData;
+    const { premiumDiscount } = currentTimeframe;
+    
+    // Only generate signal if there's a clear bias and proper zone alignment
+    const canTrade = currentTimeframe.tradingOpportunity && currentTimeframe.alignedWithHigherTF;
+    
+    if (!canTrade || dominantBias.bias === "NEUTRO") return [];
+    
+    // LONG setup: Dominant bias is ALTA + price in DISCOUNT zone
+    if (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") {
+      const entry = realtimePrice;
+      const rangeSize = premiumDiscount.rangeHigh - premiumDiscount.rangeLow;
+      const sl = entry - (rangeSize * 0.15); // Stop loss 15% below entry
+      const tp = entry + (rangeSize * 0.50); // Take profit at 50% of range
+      const rr = Math.abs((tp - entry) / (entry - sl));
+      
+      return [{
+        id: Date.now(),
+        type: "COMPRA" as const,
+        entry,
+        sl,
+        tp,
+        rr: Math.round(rr * 10) / 10,
+        time: new Date().toLocaleTimeString(),
+        confidence: currentTimeframe.confidence
+      }];
+    }
+    
+    // SHORT setup: Dominant bias is BAIXA + price in PREMIUM zone
+    if (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM") {
+      const entry = realtimePrice;
+      const rangeSize = premiumDiscount.rangeHigh - premiumDiscount.rangeLow;
+      const sl = entry + (rangeSize * 0.15); // Stop loss 15% above entry
+      const tp = entry - (rangeSize * 0.50); // Take profit at 50% of range
+      const rr = Math.abs((entry - tp) / (sl - entry));
+      
+      return [{
+        id: Date.now(),
+        type: "VENDA" as const,
+        entry,
+        sl,
+        tp,
+        rr: Math.round(rr * 10) / 10,
+        time: new Date().toLocaleTimeString(),
+        confidence: currentTimeframe.confidence
+      }];
+    }
+    
+    return [];
+  }, [mtfData, realtimePrice]);
+  
+  // Real-time price state
 
   // Debug logs
   useEffect(() => {
@@ -464,13 +510,22 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
                 } animate-pulse-slow`}
               >
                 <div className="flex justify-between items-center mb-2">
-                  <Badge
-                    variant={signal.type === "COMPRA" ? "default" : "destructive"}
-                    className="text-xs"
-                  >
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    {signal.type}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={signal.type === "COMPRA" ? "default" : "destructive"}
+                      className="text-xs"
+                    >
+                      {signal.type === "COMPRA" ? (
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                      ) : (
+                        <TrendingDown className="w-3 h-3 mr-1" />
+                      )}
+                      {signal.type}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {signal.confidence}% confiança
+                    </Badge>
+                  </div>
                   <span className="text-[10px] text-muted-foreground font-mono">
                     {signal.time}
                   </span>
@@ -501,9 +556,15 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
             ))}
           </div>
         ) : (
-          <div className="text-center text-muted-foreground text-xs py-8">
-            Aguardando formação de estrutura...
-          </div>
+          <Card className="p-4 bg-muted/50 border-dashed">
+            <div className="text-center text-muted-foreground text-xs">
+              <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="font-medium mb-1">Aguardando Setup</p>
+              <p className="text-[10px]">
+                Monitorando estrutura de mercado para identificar oportunidades de alta probabilidade
+              </p>
+            </div>
+          </Card>
         )}
       </div>
 
