@@ -1,11 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { MTFAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { Eye, EyeOff } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface TradingChartOverlayProps {
   smcData: MTFAnalysis | null;
 }
 
 export const TradingChartOverlay = ({ smcData }: TradingChartOverlayProps) => {
+  const [isVisible, setIsVisible] = useState(false);
+
   useEffect(() => {
     if (!smcData?.currentTimeframe) {
       return;
@@ -30,12 +35,31 @@ export const TradingChartOverlay = ({ smcData }: TradingChartOverlayProps) => {
     (currentData.pois && currentData.pois.length > 0) ||
     (currentData.manipulationZones && currentData.manipulationZones.length > 0);
 
-  if (!hasStructures) {
-    return null;
-  }
+  const totalStructures = 
+    (currentData.fvgs?.length || 0) +
+    (currentData.orderBlocks?.length || 0) +
+    (currentData.pois?.length || 0) +
+    (currentData.manipulationZones?.length || 0);
 
   return (
-    <div className="absolute top-4 right-4 z-10 bg-background/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg max-w-xs">
+    <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+      {/* Botão Toggle */}
+      <Button
+        onClick={() => setIsVisible(!isVisible)}
+        variant="secondary"
+        size="sm"
+        className="gap-2 shadow-lg"
+      >
+        {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        <span className="font-semibold">SMC</span>
+        <Badge variant={totalStructures > 0 ? "default" : "secondary"}>
+          {totalStructures}
+        </Badge>
+      </Button>
+
+      {/* Painel de Estruturas */}
+      {isVisible && hasStructures && (
+        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg max-w-xs transition-all duration-300 animate-scale-in">
       <div className="space-y-2 text-xs font-mono">
         <div className="flex items-center gap-2 pb-2 border-b border-border">
           <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -116,10 +140,12 @@ export const TradingChartOverlay = ({ smcData }: TradingChartOverlayProps) => {
           </div>
         )}
 
-        <div className="pt-2 border-t border-border/50 text-[10px] text-muted-foreground text-center">
-          Atualizado em tempo real
+          <div className="pt-2 border-t border-border/50 text-[10px] text-muted-foreground text-center">
+            Atualizado em tempo real
+          </div>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 };
