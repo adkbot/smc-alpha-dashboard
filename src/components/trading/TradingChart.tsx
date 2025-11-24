@@ -139,12 +139,6 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
 
       console.log("📌 Widget criado, referência salva");
 
-      // Aguardar widget estar pronto
-      widgetRef.current.onChartReady(() => {
-        console.log("✅ Gráfico TradingView pronto!");
-        setIsLoading(false);
-      });
-
       // ESTRATÉGIA 1: Detectar quando iframe do TradingView aparecer
       const checkInterval = setInterval(() => {
         const iframe = containerRef.current?.querySelector('iframe');
