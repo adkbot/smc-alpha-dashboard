@@ -1,13 +1,21 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, Square, Loader2, Eye, Video } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
+import { useState } from "react";
 
 export const VisionAgentPanel = () => {
   const { agentState, isLoading, initializeAgent, updateAgent, isUpdating } =
     useVisionAgentState();
+  
+  const [playlistUrl, setPlaylistUrl] = useState("");
+  const [confidenceThreshold, setConfidenceThreshold] = useState(70);
+  const [maxTradesPerDay, setMaxTradesPerDay] = useState(10);
 
   if (isLoading) {
     return (
@@ -61,6 +69,23 @@ export const VisionAgentPanel = () => {
     updateAgent({ mode });
   };
 
+  const handleSaveUrl = () => {
+    if (playlistUrl.trim()) {
+      updateAgent({ playlist_url: playlistUrl.trim() });
+    }
+  };
+
+  const handleSaveConfig = () => {
+    const config = (agentState?.config as any) || {};
+    updateAgent({
+      config: {
+        ...config,
+        confidence_threshold: confidenceThreshold / 100,
+        max_trades_day: maxTradesPerDay,
+      },
+    });
+  };
+
   const statusColors = {
     RUNNING: "bg-green-500",
     PAUSED: "bg-yellow-500",
@@ -87,8 +112,49 @@ export const VisionAgentPanel = () => {
           </Badge>
         </div>
 
+        {/* YouTube URL Configuration */}
+        <div className="space-y-2 pt-2 border-t">
+          <Label className="text-xs flex items-center gap-1.5">
+            <Youtube className="h-3.5 w-3.5 text-red-500" />
+            Canal/Playlist do YouTube
+          </Label>
+          <div className="flex gap-1.5">
+            <Input
+              placeholder="https://www.youtube.com/@RafaelOliveira..."
+              value={playlistUrl || agentState.playlist_url || ""}
+              onChange={(e) => setPlaylistUrl(e.target.value)}
+              disabled={agentState.status === "RUNNING" || isUpdating}
+              className="text-xs h-8"
+            />
+            <Button 
+              size="sm" 
+              onClick={handleSaveUrl}
+              disabled={!playlistUrl.trim() || isUpdating}
+              className="h-8 px-2"
+            >
+              <Save className="h-3 w-3" />
+            </Button>
+          </div>
+          {agentState.playlist_url && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-green-500 flex items-center gap-1">
+                <Check className="h-3 w-3" />
+                URL configurada
+              </p>
+              <a 
+                href={agentState.playlist_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          )}
+        </div>
+
         {/* Mode Selection */}
-        <div className="space-y-1">
+        <div className="space-y-1 pt-2 border-t">
           <p className="text-xs text-muted-foreground">Mode</p>
           <div className="flex gap-1">
             {["SHADOW", "PAPER", "LIVE"].map((mode) => (
@@ -104,6 +170,51 @@ export const VisionAgentPanel = () => {
               </Button>
             ))}
           </div>
+        </div>
+
+        {/* Advanced Configuration */}
+        <div className="space-y-3 pt-2 border-t">
+          <p className="text-xs font-medium">Configurações</p>
+          
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Confiança Mínima</Label>
+              <span className="text-xs text-muted-foreground">{confidenceThreshold}%</span>
+            </div>
+            <Slider
+              value={[confidenceThreshold]}
+              onValueChange={(v) => setConfidenceThreshold(v[0])}
+              min={50}
+              max={95}
+              step={5}
+              disabled={agentState.status === "RUNNING" || isUpdating}
+              className="w-full"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Max Trades por Dia</Label>
+            <Input
+              type="number"
+              value={maxTradesPerDay}
+              onChange={(e) => setMaxTradesPerDay(parseInt(e.target.value) || 0)}
+              disabled={agentState.status === "RUNNING" || isUpdating}
+              min={1}
+              max={100}
+              className="text-xs h-8"
+            />
+          </div>
+
+          <Button
+            onClick={handleSaveConfig}
+            disabled={agentState.status === "RUNNING" || isUpdating}
+            size="sm"
+            variant="outline"
+            className="w-full"
+          >
+            <Save className="h-3 w-3 mr-1" />
+            Salvar Configurações
+          </Button>
         </div>
 
         {/* Control Buttons */}
