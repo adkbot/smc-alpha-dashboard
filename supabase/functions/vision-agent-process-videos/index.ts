@@ -108,10 +108,26 @@ serve(async (req) => {
       try {
         console.log(`Processing video: ${video.title}`);
 
-        // Registrar vídeo na tabela
+        // Check if video already exists
+        const { data: existingVideo } = await supabase
+          .from('vision_agent_videos')
+          .select('id, status, signals_generated')
+          .eq('user_id', user.id)
+          .eq('video_id', video.id)
+          .maybeSingle();
+
+        // If video exists with completed status but no strategies, delete it for reprocessing
+        if (existingVideo && existingVideo.status === 'completed' && existingVideo.signals_generated === 0) {
+          await supabase
+            .from('vision_agent_videos')
+            .delete()
+            .eq('id', existingVideo.id);
+        }
+
+        // Upsert video record (insert or update if already exists)
         const { data: videoRecord } = await supabase
           .from('vision_agent_videos')
-          .insert({
+          .upsert({
             user_id: user.id,
             video_id: video.id,
             youtube_url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -120,6 +136,9 @@ serve(async (req) => {
             status: 'processing',
             processing_started_at: new Date().toISOString(),
             model_version: agentState.model_version || 'gemini-2.5-flash',
+            error_message: null, // Reset error message
+          }, {
+            onConflict: 'video_id,user_id',
           })
           .select()
           .single();
@@ -545,6 +564,17 @@ Retorne JSON no formato:
 
   } catch (error) {
     console.error('Error analyzing with Gemini:', error);
+    
+    // Re-throw payment errors to stop processing immediately
+    if (error instanceof Error) {
+      if (error.message.includes('402') || 
+          error.message.includes('Payment') || 
+          error.message.includes('Créditos') ||
+          error.message.includes('credits')) {
+        throw error; // Propagate payment errors up
+      }
+    }
+    
     return null;
   }
 }
