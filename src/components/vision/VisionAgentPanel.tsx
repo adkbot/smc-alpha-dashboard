@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink } from "lucide-react";
+import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
 import { useState } from "react";
 
 export const VisionAgentPanel = () => {
-  const { agentState, isLoading, initializeAgent, updateAgent, isUpdating } =
+  const { agentState, isLoading, learningStats, initializeAgent, updateAgent, isUpdating } =
     useVisionAgentState();
   
   const [playlistUrl, setPlaylistUrl] = useState("");
@@ -99,6 +99,9 @@ export const VisionAgentPanel = () => {
     LIVE: "bg-red-500",
   };
 
+  const hasLearning = (learningStats?.strategiesLearned || 0) > 0;
+  const channelName = (agentState?.config as any)?.channel_name || "Rafael Oliveira Trader Raiz";
+
   return (
     <Card className="p-4">
       <div className="space-y-3">
@@ -111,6 +114,40 @@ export const VisionAgentPanel = () => {
             {agentState.status}
           </Badge>
         </div>
+
+        {/* Strategy Status Badge */}
+        {hasLearning ? (
+          <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <GraduationCap className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-green-500">
+                  ✅ Estratégia do Professor Ativa
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {channelName}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {learningStats?.strategiesLearned} técnicas • {learningStats?.videosWatched} vídeos • {learningStats?.setupsIdentified} setups
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-muted/50 border border-border rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <Loader2 className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5 animate-spin" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">
+                  ⏳ Aguardando Aprendizado
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure o canal e inicie o agente
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* YouTube URL Configuration */}
         <div className="space-y-2 pt-2 border-t">
@@ -217,8 +254,46 @@ export const VisionAgentPanel = () => {
           </Button>
         </div>
 
+        {/* Learning Statistics */}
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-medium flex items-center gap-1.5">
+            <BookOpen className="h-3.5 w-3.5" />
+            Aprendizado
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-muted/50 rounded-lg p-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Video className="h-3 w-3 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">Vídeos</p>
+              </div>
+              <p className="text-lg font-bold">{learningStats?.videosWatched || 0}</p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <GraduationCap className="h-3 w-3 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">Estratégias</p>
+              </div>
+              <p className="text-lg font-bold">{learningStats?.strategiesLearned || 0}</p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Target className="h-3 w-3 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">Setups</p>
+              </div>
+              <p className="text-lg font-bold">{learningStats?.setupsIdentified || 0}</p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">Sinais</p>
+              </div>
+              <p className="text-lg font-bold">{learningStats?.signalsGenerated || 0}</p>
+            </div>
+          </div>
+        </div>
+
         {/* Control Buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-2">
           <Button
             onClick={handleStart}
             disabled={agentState.status === "RUNNING" || isUpdating}

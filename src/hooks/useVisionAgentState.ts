@@ -26,6 +26,48 @@ export const useVisionAgentState = () => {
     refetchInterval: 5000, // Refresh every 5 seconds
   });
 
+  // Fetch learning statistics
+  const { data: learningStats } = useQuery({
+    queryKey: ["visionLearningStats", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+
+      // Count processed videos
+      const { count: videosCount } = await supabase
+        .from("vision_videos_processed")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "COMPLETED");
+
+      // Count learned strategies
+      const { count: strategiesCount } = await supabase
+        .from("vision_learned_strategies")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id);
+
+      // Count learned setups
+      const { count: setupsCount } = await supabase
+        .from("vision_learned_setups")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id);
+
+      // Count generated signals
+      const { count: signalsCount } = await supabase
+        .from("vision_agent_signals")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id);
+
+      return {
+        videosWatched: videosCount || 0,
+        strategiesLearned: strategiesCount || 0,
+        setupsIdentified: setupsCount || 0,
+        signalsGenerated: signalsCount || 0,
+      };
+    },
+    enabled: !!user?.id,
+    refetchInterval: 10000, // Refresh every 10 seconds
+  });
+
   // Initialize agent state
   const initializeAgent = useMutation({
     mutationFn: async () => {
@@ -104,6 +146,7 @@ export const useVisionAgentState = () => {
   return {
     agentState,
     isLoading,
+    learningStats,
     initializeAgent: initializeAgent.mutate,
     updateAgent: updateAgent.mutate,
     isInitializing: initializeAgent.isPending,
