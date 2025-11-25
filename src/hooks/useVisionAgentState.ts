@@ -143,6 +143,36 @@ export const useVisionAgentState = () => {
     },
   });
 
+  // Start video processing
+  const startProcessing = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error("User not authenticated");
+      if (!agentState?.playlist_url) throw new Error("Playlist URL not configured");
+
+      const { data, error } = await supabase.functions.invoke('vision-agent-process-videos', {
+        body: {},
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["visionAgentState"] });
+      queryClient.invalidateQueries({ queryKey: ["visionLearningStats"] });
+      toast({
+        title: "Processamento Concluído! 🎉",
+        description: `${data.stats.videos_processed} vídeos processados, ${data.stats.strategies_learned} estratégias aprendidas!`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro no Processamento",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Calculate connection status based on heartbeat
   const connectionStatus = agentState?.last_heartbeat 
     ? (() => {
@@ -187,7 +217,9 @@ export const useVisionAgentState = () => {
     connectionStatus,
     initializeAgent: initializeAgent.mutate,
     updateAgent: updateAgent.mutate,
+    startProcessing: startProcessing.mutate,
     isInitializing: initializeAgent.isPending,
     isUpdating: updateAgent.isPending,
+    isProcessing: startProcessing.isPending,
   };
 };

@@ -9,9 +9,10 @@ import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect } from "react";
 import { VisionAgentAuth } from "./VisionAgentAuth";
+import { toast } from "@/hooks/use-toast";
 
 export const VisionAgentPanel = () => {
-  const { agentState, isLoading, learningStats, connectionStatus, initializeAgent, updateAgent, isUpdating } =
+  const { agentState, isLoading, learningStats, connectionStatus, initializeAgent, updateAgent, startProcessing, isUpdating, isProcessing } =
     useVisionAgentState();
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -79,7 +80,24 @@ export const VisionAgentPanel = () => {
   }
 
   const handleStart = () => {
+    // Verificar se a URL do YouTube está configurada
+    if (!agentState?.playlist_url) {
+      toast({
+        title: "URL não configurada",
+        description: "Configure a URL do canal/playlist do YouTube antes de iniciar",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Atualizar status e iniciar processamento
     updateAgent({ status: "RUNNING" });
+    startProcessing();
+    
+    toast({
+      title: "Processamento Iniciado! 🚀",
+      description: "Buscando e analisando vídeos do YouTube...",
+    });
   };
 
   const handlePause = () => {
@@ -328,12 +346,21 @@ export const VisionAgentPanel = () => {
         <div className="flex gap-2 pt-2">
           <Button
             onClick={handleStart}
-            disabled={agentState.status === "RUNNING" || isUpdating}
+            disabled={agentState.status === "RUNNING" || isUpdating || isProcessing || !agentState.playlist_url}
             size="sm"
             className="flex-1"
           >
-            <Play className="h-3 w-3 mr-1" />
-            Start
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              <>
+                <Play className="h-3 w-3 mr-1" />
+                Start
+              </>
+            )}
           </Button>
           <Button
             onClick={handlePause}
