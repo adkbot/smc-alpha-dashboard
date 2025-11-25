@@ -32,12 +32,12 @@ export const useVisionAgentState = () => {
     queryFn: async () => {
       if (!user?.id) return null;
 
-      // Count processed videos
+      // Count processed videos (use vision_agent_videos table)
       const { count: videosCount } = await supabase
-        .from("vision_videos_processed")
+        .from("vision_agent_videos")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "COMPLETED");
+        .eq("status", "completed");
 
       // Count learned strategies
       const { count: strategiesCount } = await supabase

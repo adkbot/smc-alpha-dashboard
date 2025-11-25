@@ -199,43 +199,65 @@ export const VisionAgentPanel = () => {
           </div>
         )}
 
-        {/* YouTube URL Configuration */}
+        {/* YouTube URL Configuration - Hidden for Security */}
         <div className="space-y-2 pt-2 border-t">
           <Label className="text-xs flex items-center gap-1.5">
             <Youtube className="h-3.5 w-3.5 text-red-500" />
-            Canal/Playlist do YouTube
+            Canal do YouTube
           </Label>
-          <div className="flex gap-1.5">
-            <Input
-              placeholder="https://www.youtube.com/@RafaelOliveira..."
-              value={playlistUrl || agentState.playlist_url || ""}
-              onChange={(e) => setPlaylistUrl(e.target.value)}
-              disabled={agentState.status === "RUNNING" || isUpdating}
-              className="text-xs h-8"
-            />
-            <Button 
-              size="sm" 
-              onClick={handleSaveUrl}
-              disabled={!playlistUrl.trim() || isUpdating}
-              className="h-8 px-2"
-            >
-              <Save className="h-3 w-3" />
-            </Button>
-          </div>
-          {agentState.playlist_url && (
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-green-500 flex items-center gap-1">
-                <Check className="h-3 w-3" />
-                URL configurada
-              </p>
-              <a 
-                href={agentState.playlist_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
+          
+          {agentState.playlist_url ? (
+            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-green-500">
+                      Canal configurado
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {channelName}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <a 
+                    href={agentState.playlist_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-muted/50 border border-border rounded-lg p-2.5">
+              <div className="flex items-center gap-2">
+                <Youtube className="h-4 w-4 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  Nenhum canal configurado
+                </p>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                <Input
+                  placeholder="https://www.youtube.com/@RafaelOliveira..."
+                  value={playlistUrl}
+                  onChange={(e) => setPlaylistUrl(e.target.value)}
+                  disabled={agentState.status === "RUNNING" || isUpdating}
+                  className="text-xs h-8"
+                />
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveUrl}
+                  disabled={!playlistUrl.trim() || isUpdating}
+                  className="w-full h-7"
+                >
+                  <Save className="h-3 w-3 mr-1" />
+                  Salvar Canal
+                </Button>
+              </div>
             </div>
           )}
         </div>
