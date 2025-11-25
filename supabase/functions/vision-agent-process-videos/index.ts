@@ -103,6 +103,8 @@ serve(async (req) => {
     let paymentErrors = 0;
 
     for (const video of videos) {
+      let videoRecordId: string | null = null;
+      
       try {
         console.log(`Processing video: ${video.title}`);
 
@@ -122,6 +124,8 @@ serve(async (req) => {
           .select()
           .single();
 
+        videoRecordId = videoRecord?.id || null;
+
         // Analisar thumbnail com Gemini Vision
         const analysis = await analyzeVideoWithGemini(
           lovableApiKey,
@@ -130,9 +134,11 @@ serve(async (req) => {
           video.description
         );
 
+        let strategyWasSaved = false;
+
         if (analysis) {
           // Salvar estratégia aprendida
-          const { data: strategyData } = await supabase
+          const { data: strategyData, error: strategyError } = await supabase
             .from('vision_learned_strategies')
             .insert({
               user_id: user.id,
@@ -149,7 +155,8 @@ serve(async (req) => {
             .select()
             .single();
 
-          if (strategyData) {
+          if (!strategyError && strategyData) {
+            strategyWasSaved = true;
             learnedStrategiesCount++;
 
             // Salvar setup específico
@@ -180,21 +187,24 @@ serve(async (req) => {
           }
         }
 
-        // Atualizar status do vídeo
-        if (videoRecord) {
+        // ONLY mark as completed if strategy was successfully saved
+        if (videoRecordId) {
           await supabase
             .from('vision_agent_videos')
             .update({
-              status: 'completed',
+              status: strategyWasSaved ? 'completed' : 'error',
               processing_completed_at: new Date().toISOString(),
               processed_frames: 1,
               total_frames: 1,
-              signals_generated: analysis ? 1 : 0,
+              signals_generated: strategyWasSaved ? 1 : 0,
+              error_message: strategyWasSaved ? null : 'No strategy extracted from video',
             })
-            .eq('id', videoRecord.id);
+            .eq('id', videoRecordId);
         }
 
-        processedCount++;
+        if (strategyWasSaved) {
+          processedCount++;
+        }
 
         // Atualizar progresso
         const progress = Math.round((processedCount / videos.length) * 100);
@@ -213,18 +223,32 @@ serve(async (req) => {
       } catch (videoError) {
         console.error(`Error processing video ${video.title}:`, videoError);
         
+        // Mark video as error in database
+        if (videoRecordId) {
+          await supabase
+            .from('vision_agent_videos')
+            .update({
+              status: 'error',
+              processing_completed_at: new Date().toISOString(),
+              error_message: videoError instanceof Error ? videoError.message : 'Unknown error',
+            })
+            .eq('id', videoRecordId);
+        }
+        
         // Track specific error types
         if (videoError instanceof Error) {
           if (videoError.message.includes('402') || videoError.message.includes('Créditos')) {
             paymentErrors++;
+            console.error('❌ PAYMENT ERROR: Insufficient Lovable AI credits');
           } else if (videoError.message.includes('429') || videoError.message.includes('Rate limit')) {
             rateLimitErrors++;
+            console.error('⚠️ RATE LIMIT ERROR: Too many requests');
           }
         }
         
-        // Stop processing if payment required
+        // STOP processing immediately if payment required
         if (paymentErrors > 0) {
-          console.error('❌ Stopping due to payment required');
+          console.error('❌ Stopping processing due to insufficient credits');
           break;
         }
         

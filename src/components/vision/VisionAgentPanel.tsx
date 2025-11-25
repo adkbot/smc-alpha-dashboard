@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield } from "lucide-react";
+import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield, AlertTriangle, RefreshCcw } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect } from "react";
@@ -12,8 +12,20 @@ import { VisionAgentAuth } from "./VisionAgentAuth";
 import { toast } from "@/hooks/use-toast";
 
 export const VisionAgentPanel = () => {
-  const { agentState, isLoading, learningStats, connectionStatus, initializeAgent, updateAgent, startProcessing, isUpdating, isProcessing } =
-    useVisionAgentState();
+  const { 
+    agentState, 
+    isLoading, 
+    learningStats, 
+    failedVideos,
+    connectionStatus, 
+    initializeAgent, 
+    updateAgent, 
+    startProcessing, 
+    reprocessFailedVideos,
+    isUpdating, 
+    isProcessing,
+    isReprocessing,
+  } = useVisionAgentState();
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState("");
@@ -164,6 +176,52 @@ export const VisionAgentPanel = () => {
             </Badge>
           </div>
         </div>
+
+        {/* Credit Alert Banner */}
+        {(failedVideos || 0) > 0 && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-500">
+                  ⚠️ Créditos Insuficientes
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {failedVideos} vídeos falharam por falta de créditos Lovable AI
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => window.open('https://lovable.dev/settings/workspace/usage', '_blank')}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Adicionar Créditos
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => reprocessFailedVideos()}
+                    disabled={isReprocessing}
+                  >
+                    {isReprocessing ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Reprocessando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCcw className="h-3 w-3 mr-1" />
+                        Reprocessar
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Strategy Status Badge */}
         {hasLearning ? (
