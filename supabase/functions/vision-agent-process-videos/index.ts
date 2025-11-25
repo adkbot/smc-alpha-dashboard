@@ -74,8 +74,13 @@ serve(async (req) => {
     console.log('Channel ID:', channelId);
 
     // Buscar vídeos do canal
-    const videos = await fetchChannelVideos(youtubeApiKey, channelId);
-    console.log(`Found ${videos.length} videos`);
+    const allVideos = await fetchChannelVideos(youtubeApiKey, channelId);
+    console.log(`Found ${allVideos.length} videos`);
+
+    // Process in batches of 5 to prevent timeout and rate limits
+    const BATCH_SIZE = 5;
+    const videos = allVideos.slice(0, BATCH_SIZE);
+    console.log(`Processing first ${videos.length} videos in this batch`);
 
     // Atualizar status para PROCESSING
     await supabase
@@ -94,6 +99,8 @@ serve(async (req) => {
     let processedCount = 0;
     let learnedStrategiesCount = 0;
     let learnedSetupsCount = 0;
+    let rateLimitErrors = 0;
+    let paymentErrors = 0;
 
     for (const video of videos) {
       try {
@@ -205,7 +212,23 @@ serve(async (req) => {
 
       } catch (videoError) {
         console.error(`Error processing video ${video.title}:`, videoError);
-        // Continuar com próximo vídeo
+        
+        // Track specific error types
+        if (videoError instanceof Error) {
+          if (videoError.message.includes('402') || videoError.message.includes('Créditos')) {
+            paymentErrors++;
+          } else if (videoError.message.includes('429') || videoError.message.includes('Rate limit')) {
+            rateLimitErrors++;
+          }
+        }
+        
+        // Stop processing if payment required
+        if (paymentErrors > 0) {
+          console.error('❌ Stopping due to payment required');
+          break;
+        }
+        
+        // Continue with next video for other errors
         continue;
       }
     }
@@ -223,14 +246,24 @@ serve(async (req) => {
 
     console.log(`Processing complete: ${processedCount} videos, ${learnedStrategiesCount} strategies, ${learnedSetupsCount} setups`);
 
+    // Build result message
+    let message = 'Video processing completed';
+    if (paymentErrors > 0) {
+      message = '⚠️ Processamento interrompido: Sem créditos Lovable AI. Adicione créditos em Settings → Workspace → Usage';
+    } else if (rateLimitErrors > 0) {
+      message = `⚠️ Processamento concluído com ${rateLimitErrors} erros de rate limit`;
+    }
+
     return new Response(
       JSON.stringify({
-        success: true,
-        message: 'Video processing completed',
+        success: paymentErrors === 0,
+        message,
         stats: {
           videos_processed: processedCount,
           strategies_learned: learnedStrategiesCount,
           setups_identified: learnedSetupsCount,
+          rate_limit_errors: rateLimitErrors,
+          payment_errors: paymentErrors,
         },
       }),
       {
@@ -329,9 +362,10 @@ async function fetchChannelVideos(apiKey: string, channelId: string): Promise<Yo
       id: item.snippet.resourceId.videoId,
       title: item.snippet.title,
       description: item.snippet.description,
-      thumbnail: item.snippet.thumbnails.maxres?.url || 
+      // Use medium quality to reduce size and prevent errors
+      thumbnail: item.snippet.thumbnails.medium?.url || 
                  item.snippet.thumbnails.high?.url || 
-                 item.snippet.thumbnails.medium?.url,
+                 item.snippet.thumbnails.default?.url,
       publishedAt: item.snippet.publishedAt,
     }));
 
@@ -344,6 +378,18 @@ async function fetchChannelVideos(apiKey: string, channelId: string): Promise<Yo
   }
 }
 
+// Helper function to convert ArrayBuffer to base64 safely (chunked)
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000; // 32KB chunks to prevent stack overflow
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
 // Analisar vídeo com Gemini Vision
 async function analyzeVideoWithGemini(
   apiKey: string,
@@ -354,8 +400,20 @@ async function analyzeVideoWithGemini(
   try {
     // Download da thumbnail
     const imageResponse = await fetch(thumbnailUrl);
+    if (!imageResponse.ok) {
+      console.error('Failed to fetch thumbnail:', imageResponse.status);
+      return null;
+    }
+    
     const imageBuffer = await imageResponse.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+    
+    // Limit image size to prevent issues (max 5MB)
+    if (imageBuffer.byteLength > 5 * 1024 * 1024) {
+      console.warn('Image too large, skipping:', imageBuffer.byteLength);
+      return null;
+    }
+    
+    const base64Image = arrayBufferToBase64(imageBuffer);
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -427,8 +485,23 @@ Retorne JSON no formato:
       }),
     });
 
+    // Handle rate limit and payment errors
     if (!response.ok) {
-      console.error('Gemini API error:', response.status, await response.text());
+      const errorText = await response.text();
+      
+      if (response.status === 402) {
+        console.error('❌ LOVABLE AI: Créditos insuficientes (402 Payment Required)');
+        throw new Error('Sem créditos Lovable AI. Adicione créditos em Settings → Workspace → Usage');
+      }
+      
+      if (response.status === 429) {
+        console.error('⚠️ LOVABLE AI: Rate limit atingido (429 Too Many Requests)');
+        // Retry after 5 seconds
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        throw new Error('Rate limit atingido. Tente novamente em alguns segundos.');
+      }
+      
+      console.error('Gemini API error:', response.status, errorText);
       return null;
     }
 
