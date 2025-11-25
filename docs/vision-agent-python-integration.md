@@ -233,7 +233,104 @@ class SignalModel:
         self.model = tf.keras.models.load_model(model_path)
 ```
 
-## 4. Supabase Communication
+## 4. Enhanced Learning with Gemini Vision
+
+### 4.1 Analyze Frame with AI (NEW)
+
+The system now uses Gemini Vision to extract deep knowledge from video frames:
+
+```python
+def analyze_frame_with_gemini(self, video_id: str, frame_index: int, frame_image: np.ndarray, timestamp: int):
+    """
+    Send frame to Gemini Vision for deep analysis and knowledge extraction.
+    
+    Args:
+        video_id: YouTube video ID
+        frame_index: Index of the frame
+        frame_image: Frame as numpy array (BGR format from OpenCV)
+        timestamp: Timestamp in video (seconds)
+    """
+    # Convert frame to base64
+    _, buffer = cv2.imencode('.jpg', frame_image)
+    frame_b64 = base64.b64encode(buffer).decode('utf-8')
+    
+    # Call the edge function
+    response = requests.post(
+        f"{self.config.supabase_url}/functions/v1/vision-agent-analyze-frame",
+        headers={
+            "Authorization": f"Bearer {self.jwt_token}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "video_id": video_id,
+            "frame_index": frame_index,
+            "frame_data": frame_b64,
+            "timestamp_in_video": timestamp
+        }
+    )
+    
+    if response.status_code == 200:
+        result = response.json()
+        if result.get('stored'):
+            print(f"✅ Knowledge extracted and stored: {result['extracted']['setup_type']}")
+        return result
+    else:
+        print(f"⚠️ Failed to analyze frame: {response.text}")
+        return None
+```
+
+### 4.2 When to Analyze Frames
+
+**Important**: Don't analyze every frame! Only analyze frames where:
+- Major teaching moments occur (identified by hand gestures, screen markers)
+- Setup examples are being shown
+- Entry/exit points are being demonstrated
+
+Example integration:
+```python
+# In your main processing loop
+if self.is_teaching_moment(features):  # Your logic to detect teaching
+    analysis = self.supabase.analyze_frame_with_gemini(
+        video_id=video_id,
+        frame_index=frame_idx,
+        frame_image=frame,
+        timestamp=int(frame_idx / fps)
+    )
+    
+    if analysis and analysis.get('stored'):
+        # Knowledge was learned! Continue processing
+        learned_setup = analysis['extracted']
+```
+
+### 4.3 Enhanced Signal Format
+
+Signals should now include learned strategy context:
+
+```python
+signal_data = {
+    "action": "ENTER",  # or "EXIT" or "IGNORE"
+    "video_id": video_id,
+    "frame_index": frame_idx,
+    "confidence": 0.87,
+    "symbol": "WIN$",
+    "features_summary": {...},
+    # NEW: Enhanced fields from learned knowledge
+    "setup_type": "FVG_15MIN_BULLISH",
+    "timeframe": "15m",
+    "entry_price": 125000,
+    "stop_loss": 124500,
+    "take_profit": 126500,
+    "risk_reward": 3.0,
+    "reasoning": "FVG detectado no 15min com trend H4 bullish confirmado",
+    "strategy_context": {
+        "learned_from": "video_abc123",
+        "confidence_source": "gemini_vision",
+        "pattern_match": 0.92
+    }
+}
+```
+
+## 5. Supabase Communication
 
 ```python
 import requests
