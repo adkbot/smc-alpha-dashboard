@@ -923,6 +923,279 @@ export type Database = {
         }
         Relationships: []
       }
+      vision_agent_logs: {
+        Row: {
+          action: string
+          confidence: number
+          created_at: string | null
+          executed: boolean | null
+          execution_result: string | null
+          features_summary: Json | null
+          frame_index: number
+          id: string
+          model_version: string
+          symbol: string | null
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          action: string
+          confidence: number
+          created_at?: string | null
+          executed?: boolean | null
+          execution_result?: string | null
+          features_summary?: Json | null
+          frame_index: number
+          id?: string
+          model_version: string
+          symbol?: string | null
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          action?: string
+          confidence?: number
+          created_at?: string | null
+          executed?: boolean | null
+          execution_result?: string | null
+          features_summary?: Json | null
+          frame_index?: number
+          id?: string
+          model_version?: string
+          symbol?: string | null
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: []
+      }
+      vision_agent_state: {
+        Row: {
+          config: Json | null
+          created_at: string | null
+          current_frame: number | null
+          current_video_id: string | null
+          current_video_title: string | null
+          id: string
+          last_heartbeat: string | null
+          mode: string
+          model_version: string | null
+          playlist_url: string | null
+          progress_percent: number | null
+          status: string
+          total_frames: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string | null
+          current_frame?: number | null
+          current_video_id?: string | null
+          current_video_title?: string | null
+          id?: string
+          last_heartbeat?: string | null
+          mode?: string
+          model_version?: string | null
+          playlist_url?: string | null
+          progress_percent?: number | null
+          status?: string
+          total_frames?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string | null
+          current_frame?: number | null
+          current_video_id?: string | null
+          current_video_title?: string | null
+          id?: string
+          last_heartbeat?: string | null
+          mode?: string
+          model_version?: string | null
+          playlist_url?: string | null
+          progress_percent?: number | null
+          status?: string
+          total_frames?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vision_model_metrics: {
+        Row: {
+          created_at: string | null
+          f1_score: number | null
+          id: string
+          is_active: boolean | null
+          is_promoted: boolean | null
+          max_drawdown: number | null
+          model_type: string
+          model_version: string
+          notes: string | null
+          precision_enter: number | null
+          precision_exit: number | null
+          promoted_at: string | null
+          recall_enter: number | null
+          recall_exit: number | null
+          total_pnl_simulated: number | null
+          total_trades_simulated: number | null
+          trained_at: string | null
+          training_samples: number | null
+          user_id: string
+          validation_days: number | null
+          winning_trades: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_promoted?: boolean | null
+          max_drawdown?: number | null
+          model_type: string
+          model_version: string
+          notes?: string | null
+          precision_enter?: number | null
+          precision_exit?: number | null
+          promoted_at?: string | null
+          recall_enter?: number | null
+          recall_exit?: number | null
+          total_pnl_simulated?: number | null
+          total_trades_simulated?: number | null
+          trained_at?: string | null
+          training_samples?: number | null
+          user_id: string
+          validation_days?: number | null
+          winning_trades?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_promoted?: boolean | null
+          max_drawdown?: number | null
+          model_type?: string
+          model_version?: string
+          notes?: string | null
+          precision_enter?: number | null
+          precision_exit?: number | null
+          promoted_at?: string | null
+          recall_enter?: number | null
+          recall_exit?: number | null
+          total_pnl_simulated?: number | null
+          total_trades_simulated?: number | null
+          trained_at?: string | null
+          training_samples?: number | null
+          user_id?: string
+          validation_days?: number | null
+          winning_trades?: number | null
+        }
+        Relationships: []
+      }
+      vision_training_data: {
+        Row: {
+          created_at: string | null
+          features_hash: string
+          frame_end: number
+          frame_start: number
+          id: string
+          label: string
+          label_source: string
+          pnl_result: number | null
+          sequence_length: number
+          trade_id: string | null
+          used_in_training: boolean | null
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          features_hash: string
+          frame_end: number
+          frame_start: number
+          id?: string
+          label: string
+          label_source: string
+          pnl_result?: number | null
+          sequence_length: number
+          trade_id?: string | null
+          used_in_training?: boolean | null
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string | null
+          features_hash?: string
+          frame_end?: number
+          frame_start?: number
+          id?: string
+          label?: string
+          label_source?: string
+          pnl_result?: number | null
+          sequence_length?: number
+          trade_id?: string | null
+          used_in_training?: boolean | null
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: []
+      }
+      vision_videos_processed: {
+        Row: {
+          channel_name: string | null
+          completed_at: string | null
+          created_at: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          frames_processed: number | null
+          id: string
+          signals_detected: number | null
+          started_at: string | null
+          status: string
+          total_frames: number | null
+          user_id: string
+          video_id: string
+          video_title: string
+          video_url: string
+        }
+        Insert: {
+          channel_name?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          frames_processed?: number | null
+          id?: string
+          signals_detected?: number | null
+          started_at?: string | null
+          status?: string
+          total_frames?: number | null
+          user_id: string
+          video_id: string
+          video_title: string
+          video_url: string
+        }
+        Update: {
+          channel_name?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          frames_processed?: number | null
+          id?: string
+          signals_detected?: number | null
+          started_at?: string | null
+          status?: string
+          total_frames?: number | null
+          user_id?: string
+          video_id?: string
+          video_title?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
