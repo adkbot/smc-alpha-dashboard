@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.vision-agent-analyze-frame]
 verify_jwt = true
+
+[functions.vision-agent-process-videos]
+verify_jwt = true

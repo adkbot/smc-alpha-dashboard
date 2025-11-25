@@ -143,10 +143,48 @@ export const useVisionAgentState = () => {
     },
   });
 
+  // Calculate connection status based on heartbeat
+  const connectionStatus = agentState?.last_heartbeat 
+    ? (() => {
+        const lastHeartbeat = new Date(agentState.last_heartbeat);
+        const now = new Date();
+        const secondsSinceHeartbeat = (now.getTime() - lastHeartbeat.getTime()) / 1000;
+
+        if (secondsSinceHeartbeat < 60) {
+          return { 
+            variant: "default", 
+            label: "Conectado", 
+            icon: "🟢",
+            isConnected: true 
+          };
+        } else if (secondsSinceHeartbeat < 300) {
+          return { 
+            variant: "secondary", 
+            label: "Reconectando", 
+            icon: "🟡",
+            isConnected: false 
+          };
+        } else {
+          return { 
+            variant: "destructive", 
+            label: "Desconectado", 
+            icon: "🔴",
+            isConnected: false 
+          };
+        }
+      })()
+    : { 
+        variant: "outline", 
+        label: "Nunca conectado", 
+        icon: "⚪",
+        isConnected: false 
+      };
+
   return {
     agentState,
     isLoading,
     learningStats,
+    connectionStatus,
     initializeAgent: initializeAgent.mutate,
     updateAgent: updateAgent.mutate,
     isInitializing: initializeAgent.isPending,
