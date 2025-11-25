@@ -968,6 +968,143 @@ export type Database = {
         }
         Relationships: []
       }
+      vision_agent_settings: {
+        Row: {
+          api_token: string | null
+          auto_process_new_videos: boolean | null
+          confidence_threshold: number | null
+          created_at: string | null
+          enabled: boolean | null
+          frame_step: number | null
+          id: string
+          max_signals_per_day: number | null
+          max_video_duration_seconds: number | null
+          min_video_duration_seconds: number | null
+          mode: string | null
+          model_version: string | null
+          sequence_length: number | null
+          settings_json: Json | null
+          updated_at: string | null
+          user_id: string
+          youtube_channel_url: string | null
+          youtube_playlist_url: string | null
+        }
+        Insert: {
+          api_token?: string | null
+          auto_process_new_videos?: boolean | null
+          confidence_threshold?: number | null
+          created_at?: string | null
+          enabled?: boolean | null
+          frame_step?: number | null
+          id?: string
+          max_signals_per_day?: number | null
+          max_video_duration_seconds?: number | null
+          min_video_duration_seconds?: number | null
+          mode?: string | null
+          model_version?: string | null
+          sequence_length?: number | null
+          settings_json?: Json | null
+          updated_at?: string | null
+          user_id: string
+          youtube_channel_url?: string | null
+          youtube_playlist_url?: string | null
+        }
+        Update: {
+          api_token?: string | null
+          auto_process_new_videos?: boolean | null
+          confidence_threshold?: number | null
+          created_at?: string | null
+          enabled?: boolean | null
+          frame_step?: number | null
+          id?: string
+          max_signals_per_day?: number | null
+          max_video_duration_seconds?: number | null
+          min_video_duration_seconds?: number | null
+          mode?: string | null
+          model_version?: string | null
+          sequence_length?: number | null
+          settings_json?: Json | null
+          updated_at?: string | null
+          user_id?: string
+          youtube_channel_url?: string | null
+          youtube_playlist_url?: string | null
+        }
+        Relationships: []
+      }
+      vision_agent_signals: {
+        Row: {
+          action: string | null
+          asset: string
+          confidence: number
+          created_at: string | null
+          entry_price: number | null
+          executed: boolean | null
+          execution_details: Json | null
+          execution_status: string | null
+          features_summary: Json | null
+          frame_index: number | null
+          id: string
+          model_version: string | null
+          risk_reward: number | null
+          signal_type: string
+          stop_loss: number | null
+          take_profit: number | null
+          timestamp_in_video: number | null
+          user_id: string
+          video_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          asset: string
+          confidence: number
+          created_at?: string | null
+          entry_price?: number | null
+          executed?: boolean | null
+          execution_details?: Json | null
+          execution_status?: string | null
+          features_summary?: Json | null
+          frame_index?: number | null
+          id?: string
+          model_version?: string | null
+          risk_reward?: number | null
+          signal_type: string
+          stop_loss?: number | null
+          take_profit?: number | null
+          timestamp_in_video?: number | null
+          user_id: string
+          video_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          asset?: string
+          confidence?: number
+          created_at?: string | null
+          entry_price?: number | null
+          executed?: boolean | null
+          execution_details?: Json | null
+          execution_status?: string | null
+          features_summary?: Json | null
+          frame_index?: number | null
+          id?: string
+          model_version?: string | null
+          risk_reward?: number | null
+          signal_type?: string
+          stop_loss?: number | null
+          take_profit?: number | null
+          timestamp_in_video?: number | null
+          user_id?: string
+          video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vision_agent_signals_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "vision_agent_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vision_agent_state: {
         Row: {
           config: Json | null
@@ -1019,6 +1156,66 @@ export type Database = {
           total_frames?: number | null
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      vision_agent_videos: {
+        Row: {
+          channel: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          model_version: string | null
+          processed_frames: number | null
+          processing_completed_at: string | null
+          processing_started_at: string | null
+          signals_generated: number | null
+          status: string | null
+          title: string | null
+          total_frames: number | null
+          updated_at: string | null
+          user_id: string
+          video_id: string
+          youtube_url: string
+        }
+        Insert: {
+          channel?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          model_version?: string | null
+          processed_frames?: number | null
+          processing_completed_at?: string | null
+          processing_started_at?: string | null
+          signals_generated?: number | null
+          status?: string | null
+          title?: string | null
+          total_frames?: number | null
+          updated_at?: string | null
+          user_id: string
+          video_id: string
+          youtube_url: string
+        }
+        Update: {
+          channel?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          model_version?: string | null
+          processed_frames?: number | null
+          processing_completed_at?: string | null
+          processing_started_at?: string | null
+          signals_generated?: number | null
+          status?: string | null
+          title?: string | null
+          total_frames?: number | null
+          updated_at?: string | null
+          user_id?: string
+          video_id?: string
+          youtube_url?: string
         }
         Relationships: []
       }
