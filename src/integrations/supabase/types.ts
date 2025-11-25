@@ -1219,6 +1219,128 @@ export type Database = {
         }
         Relationships: []
       }
+      vision_learned_setups: {
+        Row: {
+          asset: string
+          created_at: string | null
+          entry_price: number | null
+          frame_index: number
+          id: string
+          reasoning: string | null
+          risk_reward: number | null
+          screenshot_url: string | null
+          setup_context: string | null
+          stop_loss: number | null
+          strategy_id: string | null
+          take_profit: number | null
+          timeframe: string
+          timestamp_in_video: number | null
+          user_id: string
+          video_id: string
+          visual_elements: Json | null
+        }
+        Insert: {
+          asset?: string
+          created_at?: string | null
+          entry_price?: number | null
+          frame_index: number
+          id?: string
+          reasoning?: string | null
+          risk_reward?: number | null
+          screenshot_url?: string | null
+          setup_context?: string | null
+          stop_loss?: number | null
+          strategy_id?: string | null
+          take_profit?: number | null
+          timeframe: string
+          timestamp_in_video?: number | null
+          user_id: string
+          video_id: string
+          visual_elements?: Json | null
+        }
+        Update: {
+          asset?: string
+          created_at?: string | null
+          entry_price?: number | null
+          frame_index?: number
+          id?: string
+          reasoning?: string | null
+          risk_reward?: number | null
+          screenshot_url?: string | null
+          setup_context?: string | null
+          stop_loss?: number | null
+          strategy_id?: string | null
+          take_profit?: number | null
+          timeframe?: string
+          timestamp_in_video?: number | null
+          user_id?: string
+          video_id?: string
+          visual_elements?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vision_learned_setups_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "vision_learned_strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vision_learned_strategies: {
+        Row: {
+          conditions: Json
+          confidence_score: number | null
+          created_at: string | null
+          description: string | null
+          entry_rules: Json
+          exit_rules: Json
+          id: string
+          learned_from_video_id: string | null
+          setup_type: string
+          strategy_name: string
+          success_rate: number | null
+          times_applied: number | null
+          updated_at: string | null
+          user_id: string
+          visual_reference_url: string | null
+        }
+        Insert: {
+          conditions?: Json
+          confidence_score?: number | null
+          created_at?: string | null
+          description?: string | null
+          entry_rules?: Json
+          exit_rules?: Json
+          id?: string
+          learned_from_video_id?: string | null
+          setup_type: string
+          strategy_name: string
+          success_rate?: number | null
+          times_applied?: number | null
+          updated_at?: string | null
+          user_id: string
+          visual_reference_url?: string | null
+        }
+        Update: {
+          conditions?: Json
+          confidence_score?: number | null
+          created_at?: string | null
+          description?: string | null
+          entry_rules?: Json
+          exit_rules?: Json
+          id?: string
+          learned_from_video_id?: string | null
+          setup_type?: string
+          strategy_name?: string
+          success_rate?: number | null
+          times_applied?: number | null
+          updated_at?: string | null
+          user_id?: string
+          visual_reference_url?: string | null
+        }
+        Relationships: []
+      }
       vision_model_metrics: {
         Row: {
           created_at: string | null

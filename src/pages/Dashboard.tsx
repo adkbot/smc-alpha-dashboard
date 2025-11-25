@@ -9,6 +9,7 @@ import { TradingLogsPanel } from "@/components/trading/TradingLogsPanel";
 import { VisionAgentPanel } from "@/components/vision/VisionAgentPanel";
 import { VisionAgentLogs } from "@/components/vision/VisionAgentLogs";
 import { VisionAgentVideos } from "@/components/vision/VisionAgentVideos";
+import { VisionAgentStrategies } from "@/components/vision/VisionAgentStrategies";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 
 const Dashboard = () => {
@@ -38,6 +39,7 @@ const Dashboard = () => {
           <div className="h-full overflow-y-auto pb-4 space-y-2">
             <BotControlPanel />
             <VisionAgentPanel />
+            <VisionAgentStrategies />
             <ActivePositionsPanel />
             <AccountPanel />
             <SMCPanel symbol={symbol} interval={interval} />

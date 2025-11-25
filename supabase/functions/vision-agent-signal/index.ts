@@ -18,6 +18,15 @@ interface SignalPayload {
     [key: string]: any;
   };
   model_version: string;
+  // Enhanced fields for learned knowledge
+  setup_type?: string;
+  timeframe?: string;
+  entry_price?: number;
+  stop_loss?: number;
+  take_profit?: number;
+  risk_reward?: number;
+  reasoning?: string;
+  strategy_context?: Record<string, any>;
 }
 
 Deno.serve(async (req) => {
@@ -121,11 +130,11 @@ Deno.serve(async (req) => {
     if (agentState && ['PAPER', 'LIVE'].includes(agentState.mode) && payload.action !== 'IGNORE') {
       console.log('[vision-agent-signal] Creating pending signal for execution');
 
-      const direction = payload.action === 'ENTER' ? 'LONG' : 'SHORT'; // Simplified logic
-      const entryPrice = 0; // Will be filled by execute-order function
-      const stopLoss = 0;
-      const takeProfit = 0;
-      const riskReward = 3.0;
+      const direction = payload.action === 'ENTER' ? 'LONG' : 'SHORT';
+      const entryPrice = payload.entry_price || 0; // Use provided entry price or 0
+      const stopLoss = payload.stop_loss || 0;
+      const takeProfit = payload.take_profit || 0;
+      const riskReward = payload.risk_reward || 3.0;
 
       const { data: signalData, error: signalError } = await supabase
         .from('pending_signals')
@@ -138,7 +147,7 @@ Deno.serve(async (req) => {
           take_profit: takeProfit,
           risk_reward: riskReward,
           status: 'PENDING',
-          strategy: 'VISION_AGENT',
+          strategy: payload.setup_type || 'VISION_AGENT',
           session: 'VISION',
           confidence_score: payload.confidence * 100,
           signal_data: {
@@ -146,11 +155,18 @@ Deno.serve(async (req) => {
             frame_index: payload.frame_index,
             features_summary: payload.features_summary,
             model_version: payload.model_version,
+            setup_type: payload.setup_type,
+            timeframe: payload.timeframe,
+            reasoning: payload.reasoning,
+            strategy_context: payload.strategy_context,
           },
           agents: {
             vision_agent: {
               action: payload.action,
               confidence: payload.confidence,
+              model_version: payload.model_version,
+              setup_type: payload.setup_type,
+              learned_from: payload.strategy_context?.learned_from || 'training',
             },
           },
           detected_at: new Date().toISOString(),
