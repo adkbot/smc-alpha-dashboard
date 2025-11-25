@@ -32,12 +32,13 @@ export const useVisionAgentState = () => {
     queryFn: async () => {
       if (!user?.id) return null;
 
-      // Count processed videos (use vision_agent_videos table)
+      // Count processed videos (only truly completed ones with strategies)
       const { count: videosCount } = await supabase
         .from("vision_agent_videos")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "completed");
+        .eq("status", "completed")
+        .gt("signals_generated", 0); // Only count videos that actually generated strategies
 
       // Count learned strategies
       const { count: strategiesCount } = await supabase
@@ -143,17 +144,18 @@ export const useVisionAgentState = () => {
     },
   });
 
-  // Fetch failed videos count
+  // Fetch failed videos count (including "false completed" videos)
   const { data: failedVideos } = useQuery({
     queryKey: ["visionFailedVideos", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
 
+      // Count videos with explicit error status OR completed but no strategies
       const { count } = await supabase
         .from("vision_agent_videos")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("status", "error");
+        .or('status.eq.error,and(status.eq.completed,signals_generated.eq.0)');
 
       return count || 0;
     },
@@ -207,12 +209,12 @@ export const useVisionAgentState = () => {
     mutationFn: async () => {
       if (!user?.id) throw new Error("User not authenticated");
 
-      // Delete failed videos so they can be reprocessed
+      // Delete videos with error status OR completed with no strategies (false completed)
       await supabase
         .from("vision_agent_videos")
         .delete()
         .eq("user_id", user.id)
-        .eq("status", "error");
+        .or('status.eq.error,and(status.eq.completed,signals_generated.eq.0)');
 
       // Trigger processing again
       const { data, error } = await supabase.functions.invoke('vision-agent-process-videos', {
