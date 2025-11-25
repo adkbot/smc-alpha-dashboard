@@ -143,6 +143,24 @@ export const useVisionAgentState = () => {
     },
   });
 
+  // Fetch failed videos count
+  const { data: failedVideos } = useQuery({
+    queryKey: ["visionFailedVideos", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+
+      const { count } = await supabase
+        .from("vision_agent_videos")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "error");
+
+      return count || 0;
+    },
+    enabled: !!user?.id,
+    refetchInterval: 10000,
+  });
+
   // Start video processing
   const startProcessing = useMutation({
     mutationFn: async () => {
@@ -159,14 +177,64 @@ export const useVisionAgentState = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["visionAgentState"] });
       queryClient.invalidateQueries({ queryKey: ["visionLearningStats"] });
-      toast({
-        title: "Processamento Concluído! 🎉",
-        description: `${data.stats.videos_processed} vídeos processados, ${data.stats.strategies_learned} estratégias aprendidas!`,
-      });
+      queryClient.invalidateQueries({ queryKey: ["visionFailedVideos"] });
+      
+      // Handle different result types
+      if (data.success === false || data.stats.payment_errors > 0) {
+        toast({
+          title: "⚠️ Créditos Insuficientes",
+          description: "Adicione créditos Lovable AI em Settings → Workspace → Usage",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Processamento Concluído! 🎉",
+          description: `${data.stats.videos_processed} vídeos processados, ${data.stats.strategies_learned} estratégias aprendidas!`,
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
         title: "Erro no Processamento",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Reprocess failed videos
+  const reprocessFailedVideos = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error("User not authenticated");
+
+      // Delete failed videos so they can be reprocessed
+      await supabase
+        .from("vision_agent_videos")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("status", "error");
+
+      // Trigger processing again
+      const { data, error } = await supabase.functions.invoke('vision-agent-process-videos', {
+        body: {},
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["visionAgentState"] });
+      queryClient.invalidateQueries({ queryKey: ["visionLearningStats"] });
+      queryClient.invalidateQueries({ queryKey: ["visionFailedVideos"] });
+      
+      toast({
+        title: "Reprocessamento Iniciado! 🔄",
+        description: "Processando vídeos com falha novamente...",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro no Reprocessamento",
         description: error.message,
         variant: "destructive",
       });
@@ -214,12 +282,15 @@ export const useVisionAgentState = () => {
     agentState,
     isLoading,
     learningStats,
+    failedVideos,
     connectionStatus,
     initializeAgent: initializeAgent.mutate,
     updateAgent: updateAgent.mutate,
     startProcessing: startProcessing.mutate,
+    reprocessFailedVideos: reprocessFailedVideos.mutate,
     isInitializing: initializeAgent.isPending,
     isUpdating: updateAgent.isPending,
     isProcessing: startProcessing.isPending,
+    isReprocessing: reprocessFailedVideos.isPending,
   };
 };
