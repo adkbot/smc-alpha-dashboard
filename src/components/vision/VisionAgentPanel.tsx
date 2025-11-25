@@ -4,18 +4,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp } from "lucide-react";
+import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { VisionAgentAuth } from "./VisionAgentAuth";
 
 export const VisionAgentPanel = () => {
-  const { agentState, isLoading, learningStats, initializeAgent, updateAgent, isUpdating } =
+  const { agentState, isLoading, learningStats, connectionStatus, initializeAgent, updateAgent, isUpdating } =
     useVisionAgentState();
   
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [confidenceThreshold, setConfidenceThreshold] = useState(70);
   const [maxTradesPerDay, setMaxTradesPerDay] = useState(10);
+
+  // Check authentication on mount
+  useEffect(() => {
+    const auth = sessionStorage.getItem("vision_admin_auth");
+    setIsAuthenticated(auth === "true");
+  }, []);
+
+  // Sync states with database
+  useEffect(() => {
+    if (agentState) {
+      setPlaylistUrl(agentState.playlist_url || "");
+      if (agentState.config) {
+        const config = agentState.config as any;
+        setConfidenceThreshold((config.confidence_threshold || 0.70) * 100);
+        setMaxTradesPerDay(config.max_trades_day || 10);
+      }
+    }
+  }, [agentState]);
+
+  // Render authentication modal if not authenticated
+  if (!isAuthenticated) {
+    return <VisionAgentAuth isOpen={!isAuthenticated} onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
 
   if (isLoading) {
     return (
@@ -107,12 +132,19 @@ export const VisionAgentPanel = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold flex items-center gap-2">
-            <Eye className="h-4 w-4" />
-            Vision Agent
+            <Shield className="h-4 w-4 text-yellow-500" />
+            Vision Agent (Admin)
           </h3>
-          <Badge className={statusColors[agentState.status as keyof typeof statusColors] || "bg-gray-500"}>
-            {agentState.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {connectionStatus && (
+              <Badge variant={connectionStatus.variant as any} className="text-xs">
+                {connectionStatus.icon} {connectionStatus.label}
+              </Badge>
+            )}
+            <Badge className={statusColors[agentState.status as keyof typeof statusColors] || "bg-gray-500"}>
+              {agentState.status}
+            </Badge>
+          </div>
         </div>
 
         {/* Strategy Status Badge */}
