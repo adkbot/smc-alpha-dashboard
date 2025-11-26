@@ -7,9 +7,10 @@ import { Lock, AlertCircle } from "lucide-react";
 interface VisionAgentAuthProps {
   isOpen: boolean;
   onAuthenticated: () => void;
+  onClose?: () => void;
 }
 
-export const VisionAgentAuth = ({ isOpen, onAuthenticated }: VisionAgentAuthProps) => {
+export const VisionAgentAuth = ({ isOpen, onAuthenticated, onClose }: VisionAgentAuthProps) => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -32,7 +33,7 @@ export const VisionAgentAuth = ({ isOpen, onAuthenticated }: VisionAgentAuthProp
   };
 
   return (
-    <Dialog open={isOpen}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="mx-auto mb-4">

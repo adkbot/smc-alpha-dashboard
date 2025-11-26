@@ -28,15 +28,37 @@ export const VisionAgentPanel = () => {
   } = useVisionAgentState();
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [confidenceThreshold, setConfidenceThreshold] = useState(70);
   const [maxTradesPerDay, setMaxTradesPerDay] = useState(10);
 
-  // Check authentication on mount
+  // Check authentication on mount (but don't block UI)
   useEffect(() => {
     const auth = sessionStorage.getItem("vision_admin_auth");
     setIsAuthenticated(auth === "true");
   }, []);
+
+  // Function to check auth before sensitive actions
+  const requireAuth = (action: () => void) => {
+    if (isAuthenticated) {
+      action();
+    } else {
+      setPendingAction(() => action);
+      setShowAuthModal(true);
+    }
+  };
+
+  // Handle successful authentication
+  const handleAuthenticated = () => {
+    setIsAuthenticated(true);
+    setShowAuthModal(false);
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
+    }
+  };
 
   // Sync states with database
   useEffect(() => {
@@ -49,11 +71,6 @@ export const VisionAgentPanel = () => {
       }
     }
   }, [agentState]);
-
-  // Render authentication modal if not authenticated
-  if (!isAuthenticated) {
-    return <VisionAgentAuth isOpen={!isAuthenticated} onAuthenticated={() => setIsAuthenticated(true)} />;
-  }
 
   if (isLoading) {
     return (
@@ -92,52 +109,64 @@ export const VisionAgentPanel = () => {
   }
 
   const handleStart = () => {
-    // Verificar se a URL do YouTube está configurada
-    if (!agentState?.playlist_url) {
-      toast({
-        title: "URL não configurada",
-        description: "Configure a URL do canal/playlist do YouTube antes de iniciar",
-        variant: "destructive",
-      });
-      return;
-    }
+    requireAuth(() => {
+      // Verificar se a URL do YouTube está configurada
+      if (!agentState?.playlist_url) {
+        toast({
+          title: "URL não configurada",
+          description: "Configure a URL do canal/playlist do YouTube antes de iniciar",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    // Atualizar status e iniciar processamento
-    updateAgent({ status: "RUNNING" });
-    startProcessing();
-    
-    toast({
-      title: "Processamento Iniciado! 🚀",
-      description: "Buscando e analisando vídeos do YouTube...",
+      // Atualizar status e iniciar processamento
+      updateAgent({ status: "RUNNING" });
+      startProcessing();
+      
+      toast({
+        title: "Processamento Iniciado! 🚀",
+        description: "Buscando e analisando vídeos do YouTube...",
+      });
     });
   };
 
   const handlePause = () => {
-    updateAgent({ status: "PAUSED" });
+    requireAuth(() => {
+      updateAgent({ status: "PAUSED" });
+    });
   };
 
   const handleStop = () => {
-    updateAgent({ status: "STOPPED" });
+    requireAuth(() => {
+      updateAgent({ status: "STOPPED" });
+    });
   };
 
   const handleModeChange = (mode: string) => {
-    updateAgent({ mode });
+    requireAuth(() => {
+      updateAgent({ mode });
+    });
   };
 
   const handleSaveUrl = () => {
-    if (playlistUrl.trim()) {
-      updateAgent({ playlist_url: playlistUrl.trim() });
-    }
+    requireAuth(() => {
+      if (playlistUrl.trim()) {
+        updateAgent({ playlist_url: playlistUrl.trim() });
+      }
+    });
   };
 
   const handleSaveConfig = () => {
-    const config = (agentState?.config as any) || {};
-    updateAgent({
-      config: {
-        ...config,
-        confidence_threshold: confidenceThreshold / 100,
-        max_trades_day: maxTradesPerDay,
-      },
+    requireAuth(() => {
+      const config = (agentState?.config as any) || {};
+      updateAgent({
+        config: {
+          ...config,
+          confidence_threshold: confidenceThreshold / 100,
+          max_trades_day: maxTradesPerDay,
+        },
+      });
     });
   };
 
@@ -202,7 +231,7 @@ export const VisionAgentPanel = () => {
                   <Button
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => reprocessFailedVideos()}
+                    onClick={() => requireAuth(() => reprocessFailedVideos())}
                     disabled={isReprocessing}
                   >
                     {isReprocessing ? (
@@ -503,6 +532,16 @@ export const VisionAgentPanel = () => {
           </div>
         </div>
       </div>
+
+      {/* Authentication Modal - Only shown when trying to configure */}
+      <VisionAgentAuth 
+        isOpen={showAuthModal} 
+        onAuthenticated={handleAuthenticated}
+        onClose={() => {
+          setShowAuthModal(false);
+          setPendingAction(null);
+        }}
+      />
     </Card>
   );
 };
