@@ -85,6 +85,7 @@ export const TopBar = ({ symbol, interval, onSymbolChange, onIntervalChange }: T
             <SelectItem value="1m">1 Minuto</SelectItem>
             <SelectItem value="5m">5 Minutos</SelectItem>
             <SelectItem value="15m">15 Minutos</SelectItem>
+            <SelectItem value="30m">30 Minutos</SelectItem>
             <SelectItem value="1h">1 Hora</SelectItem>
             <SelectItem value="4h">4 Horas</SelectItem>
             <SelectItem value="1d">1 Dia</SelectItem>

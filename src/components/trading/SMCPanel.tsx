@@ -3,12 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { MTFAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SMCPanelProps {
   symbol: string;
   interval: string;
+  mtfData?: MTFAnalysis | null;
 }
 
 const getTrendIcon = (trend: string) => {
@@ -23,11 +24,10 @@ const getTrendColorClass = (trend: string) => {
   return "text-muted-foreground";
 };
 
-export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
+export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
   const [trend] = useState<"ALTA" | "BAIXA" | "NEUTRO">("ALTA");
 
-  // Multi-Timeframe Analysis
-  const { data: mtfData, loading: mtfLoading } = useMultiTimeframeAnalysis(symbol, interval);
+  const mtfLoading = !mtfData;
   
   // Real-time price state
   const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
@@ -299,7 +299,7 @@ export const SMCPanel = ({ symbol, interval }: SMCPanelProps) => {
                 <div
                   key={tf.timeframe}
                   className={`p-1.5 rounded border text-center ${
-                    tf.timeframe === interval 
+                    tf.timeframe.toLowerCase() === interval.toLowerCase() 
                       ? 'border-primary bg-primary/20' 
                       : 'border-border bg-secondary/50'
                   }`}

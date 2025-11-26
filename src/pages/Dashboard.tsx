@@ -42,7 +42,7 @@ const Dashboard = () => {
             <VisionAgentStrategies />
             <ActivePositionsPanel />
             <AccountPanel />
-            <SMCPanel symbol={symbol} interval={interval} />
+            <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
             <VisionAgentLogs />
             <VisionAgentVideos />
             <TradingLogsPanel />
