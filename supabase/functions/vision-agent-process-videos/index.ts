@@ -433,7 +433,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Analisar vídeo com Gemini Vision
+// Analisar vídeo com Gemini Vision usando Function Calling
 async function analyzeVideoWithGemini(
   apiKey: string,
   thumbnailUrl: string,
@@ -441,35 +441,38 @@ async function analyzeVideoWithGemini(
   videoDescription: string
 ): Promise<ExtractedStrategy | null> {
   try {
+    console.log('📥 Downloading thumbnail:', thumbnailUrl);
+    
     // Download da thumbnail
     const imageResponse = await fetch(thumbnailUrl);
     if (!imageResponse.ok) {
-      console.error('Failed to fetch thumbnail:', imageResponse.status);
+      console.error('❌ Failed to fetch thumbnail:', imageResponse.status);
       return null;
     }
     
     const imageBuffer = await imageResponse.arrayBuffer();
+    console.log(`✅ Thumbnail downloaded: ${imageBuffer.byteLength} bytes`);
     
     // Limit image size to prevent issues (max 5MB)
     if (imageBuffer.byteLength > 5 * 1024 * 1024) {
-      console.warn('Image too large, skipping:', imageBuffer.byteLength);
+      console.warn('⚠️ Image too large, skipping:', imageBuffer.byteLength);
       return null;
     }
     
     const base64Image = arrayBufferToBase64(imageBuffer);
+    console.log('✅ Image converted to base64');
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `Você é um analisador especializado em estratégias de trading. Analise vídeos de trading do YouTube e extraia METODOLOGIA COMPLETA ensinada pelo instrutor.
+    console.log('🚀 Sending request to Gemini Vision API...');
+    console.log('📝 Video title:', videoTitle);
+    console.log('📝 Video description:', videoDescription.substring(0, 200) + '...');
+
+    // Use function calling for more reliable structured extraction
+    const requestBody = {
+      model: 'google/gemini-2.5-flash',
+      messages: [
+        {
+          role: 'system',
+          content: `Você é um analisador especializado em estratégias de trading. Analise vídeos de trading do YouTube e extraia METODOLOGIA COMPLETA ensinada pelo instrutor.
 
 IMPORTANTE: Extraia estratégias reais de trading, não apenas descrição visual. Identifique:
 - Técnica ensinada (ex: FVG Bullish, Order Block, Break of Structure)
@@ -477,60 +480,118 @@ IMPORTANTE: Extraia estratégias reais de trading, não apenas descrição visua
 - Regras de ENTRADA (onde entrar, por quê)
 - Regras de SAÍDA (Stop Loss, Take Profit, trailing)
 - Risk/Reward ratio recomendado
-- Sinais visuais importantes (linhas, zonas, padrões)
-
-Retorne JSON estruturado com estratégia extraída.`
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Analise este vídeo de trading e extraia a estratégia/técnica ensinada:
+- Sinais visuais importantes (linhas, zonas, padrões)`
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Analise este vídeo de trading e extraia a estratégia/técnica ensinada:
 
 Título: ${videoTitle}
 Descrição: ${videoDescription}
 
-Retorne JSON no formato:
-{
-  "setup_type": "tipo do setup (ex: FVG_BULLISH, ORDER_BLOCK_LONG)",
-  "strategy_name": "nome da estratégia",
-  "description": "descrição completa da técnica",
-  "conditions": {
-    "timeframe": "timeframe recomendado",
-    "market_context": "contexto necessário",
-    "confluences": ["confluência 1", "confluência 2"]
-  },
-  "entry_rules": {
-    "where": "onde entrar",
-    "why": "por que entrar",
-    "price": "nível de preço (se mencionado)"
-  },
-  "exit_rules": {
-    "stop_loss": "onde colocar SL",
-    "take_profit": "onde colocar TP",
-    "risk_reward": "ratio R:R"
-  },
-  "confidence_score": 0.85,
-  "reasoning": "explicação do que foi identificado"
-}`
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`
-                }
+Use a função extract_strategy para retornar a estratégia estruturada.`
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/jpeg;base64,${base64Image}`
               }
-            ]
+            }
+          ]
+        }
+      ],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'extract_strategy',
+            description: 'Extract trading strategy from video analysis',
+            parameters: {
+              type: 'object',
+              properties: {
+                setup_type: {
+                  type: 'string',
+                  description: 'Type of setup (e.g., FVG_BULLISH, ORDER_BLOCK_LONG)'
+                },
+                strategy_name: {
+                  type: 'string',
+                  description: 'Name of the strategy'
+                },
+                description: {
+                  type: 'string',
+                  description: 'Complete description of the technique'
+                },
+                conditions: {
+                  type: 'object',
+                  properties: {
+                    timeframe: { type: 'string' },
+                    market_context: { type: 'string' },
+                    confluences: {
+                      type: 'array',
+                      items: { type: 'string' }
+                    }
+                  },
+                  required: ['timeframe', 'market_context', 'confluences']
+                },
+                entry_rules: {
+                  type: 'object',
+                  properties: {
+                    where: { type: 'string' },
+                    why: { type: 'string' },
+                    price: { type: 'string' }
+                  },
+                  required: ['where', 'why']
+                },
+                exit_rules: {
+                  type: 'object',
+                  properties: {
+                    stop_loss: { type: 'string' },
+                    take_profit: { type: 'string' },
+                    risk_reward: { type: 'string' }
+                  },
+                  required: ['stop_loss', 'take_profit', 'risk_reward']
+                },
+                confidence_score: {
+                  type: 'number',
+                  description: 'Confidence score between 0 and 1'
+                },
+                reasoning: {
+                  type: 'string',
+                  description: 'Explanation of what was identified'
+                }
+              },
+              required: ['setup_type', 'strategy_name', 'description', 'conditions', 'entry_rules', 'exit_rules', 'confidence_score', 'reasoning']
+            }
           }
-        ],
-        temperature: 0.3,
-      }),
+        }
+      ],
+      tool_choice: {
+        type: 'function',
+        function: { name: 'extract_strategy' }
+      }
+      // NOTE: temperature parameter removed - not supported by Gemini 2.5 Flash
+    };
+
+    console.log('📤 Request body prepared (model: google/gemini-2.5-flash)');
+
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
     });
+
+    console.log('📨 Response status:', response.status);
 
     // Handle rate limit and payment errors
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('❌ Gemini API error response:', errorText);
       
       if (response.status === 402) {
         console.error('❌ LOVABLE AI: Créditos insuficientes (402 Payment Required)');
@@ -544,26 +605,81 @@ Retorne JSON no formato:
         throw new Error('Rate limit atingido. Tente novamente em alguns segundos.');
       }
       
-      console.error('Gemini API error:', response.status, errorText);
+      console.error('❌ Gemini API error:', response.status, errorText);
       return null;
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    console.log('📨 Full Gemini response:', JSON.stringify(data, null, 2));
     
-    console.log('Gemini response:', content);
-
-    // Extrair JSON da resposta
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const strategy = JSON.parse(jsonMatch[0]);
-      return strategy;
+    // Try to extract from function call first (more reliable)
+    if (data.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+      console.log('✅ Function call detected - extracting structured data');
+      const functionArgs = data.choices[0].message.tool_calls[0].function.arguments;
+      console.log('📋 Function arguments:', functionArgs);
+      
+      try {
+        const strategy = typeof functionArgs === 'string' 
+          ? JSON.parse(functionArgs) 
+          : functionArgs;
+        
+        console.log('✅ Successfully extracted strategy from function call');
+        console.log('📊 Strategy:', JSON.stringify(strategy, null, 2));
+        return strategy;
+      } catch (parseError) {
+        console.error('❌ Failed to parse function arguments:', parseError);
+      }
+    }
+    
+    // Fallback: try to extract from text content
+    const content = data.choices[0]?.message?.content;
+    console.log('📝 Message content:', content);
+    
+    if (!content) {
+      console.error('❌ No content in response');
+      return null;
     }
 
+    // Improved JSON extraction - try multiple patterns
+    console.log('🔍 Attempting to extract JSON from text content...');
+    
+    // Pattern 1: Standard JSON block
+    let jsonMatch = content.match(/\{[\s\S]*\}/);
+    
+    // Pattern 2: JSON in code block
+    if (!jsonMatch) {
+      jsonMatch = content.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) jsonMatch = [jsonMatch[1]];
+    }
+    
+    // Pattern 3: JSON after text
+    if (!jsonMatch) {
+      jsonMatch = content.match(/(?:estratégia|strategy|análise|analysis)[:\s]*(\{[\s\S]*\})/i);
+      if (jsonMatch) jsonMatch = [jsonMatch[1]];
+    }
+    
+    if (jsonMatch) {
+      console.log('✅ JSON pattern found, attempting to parse...');
+      console.log('📋 Extracted JSON:', jsonMatch[0].substring(0, 200) + '...');
+      
+      try {
+        const strategy = JSON.parse(jsonMatch[0]);
+        console.log('✅ Successfully parsed strategy from text');
+        console.log('📊 Strategy:', JSON.stringify(strategy, null, 2));
+        return strategy;
+      } catch (parseError) {
+        console.error('❌ Failed to parse extracted JSON:', parseError);
+        console.error('📋 Raw extracted text:', jsonMatch[0]);
+      }
+    } else {
+      console.error('❌ No JSON pattern found in response content');
+    }
+
+    console.error('❌ Failed to extract strategy from response');
     return null;
 
   } catch (error) {
-    console.error('Error analyzing with Gemini:', error);
+    console.error('❌ Error analyzing with Gemini:', error);
     
     // Re-throw payment errors to stop processing immediately
     if (error instanceof Error) {
