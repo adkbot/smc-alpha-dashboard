@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield, AlertTriangle, RefreshCcw } from "lucide-react";
+import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield, AlertTriangle, RefreshCcw, Trash2 } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect } from "react";
@@ -22,9 +22,11 @@ export const VisionAgentPanel = () => {
     updateAgent, 
     startProcessing, 
     reprocessFailedVideos,
+    clearAllData,
     isUpdating, 
     isProcessing,
     isReprocessing,
+    isClearing,
   } = useVisionAgentState();
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -490,6 +492,35 @@ export const VisionAgentPanel = () => {
           >
             <Square className="h-3 w-3 mr-1" />
             Stop
+          </Button>
+        </div>
+
+        {/* Clear All Data Button */}
+        <div className="pt-2 border-t">
+          <Button
+            onClick={() => {
+              requireAuth(() => {
+                if (window.confirm('⚠️ ATENÇÃO: Isso irá deletar TODOS os vídeos processados, estratégias aprendidas e setups identificados. Esta ação não pode ser desfeita. Deseja continuar?')) {
+                  clearAllData();
+                }
+              });
+            }}
+            disabled={isClearing || isUpdating || agentState.status === "RUNNING"}
+            size="sm"
+            variant="outline"
+            className="w-full border-red-500/50 text-red-500 hover:bg-red-500/10 hover:text-red-500"
+          >
+            {isClearing ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Limpando...
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-3 w-3 mr-1" />
+                Limpar Tudo e Reiniciar
+              </>
+            )}
           </Button>
         </div>
 

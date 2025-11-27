@@ -243,6 +243,80 @@ export const useVisionAgentState = () => {
     },
   });
 
+  // Clear all data and restart
+  const clearAllData = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error("User not authenticated");
+
+      console.log('🗑️ Deleting all Vision Agent data for user:', user.id);
+
+      // Delete all videos
+      const { error: videosError } = await supabase
+        .from("vision_agent_videos")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (videosError) throw videosError;
+
+      // Delete all learned strategies
+      const { error: strategiesError } = await supabase
+        .from("vision_learned_strategies")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (strategiesError) throw strategiesError;
+
+      // Delete all learned setups
+      const { error: setupsError } = await supabase
+        .from("vision_learned_setups")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (setupsError) throw setupsError;
+
+      // Delete all signals
+      const { error: signalsError } = await supabase
+        .from("vision_agent_signals")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (signalsError) throw signalsError;
+
+      // Reset agent state progress
+      if (agentState?.id) {
+        await supabase
+          .from("vision_agent_state")
+          .update({
+            status: 'STOPPED',
+            current_frame: 0,
+            total_frames: 0,
+            progress_percent: 0,
+            current_video_title: null,
+          })
+          .eq("id", agentState.id);
+      }
+
+      console.log('✅ All Vision Agent data cleared');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["visionAgentState"] });
+      queryClient.invalidateQueries({ queryKey: ["visionLearningStats"] });
+      queryClient.invalidateQueries({ queryKey: ["visionFailedVideos"] });
+      
+      toast({
+        title: "Dados Limpos! 🗑️",
+        description: "Todos os vídeos e estratégias foram removidos. Pronto para reiniciar.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao Limpar Dados",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Calculate connection status based on heartbeat
   const connectionStatus = agentState?.last_heartbeat 
     ? (() => {
@@ -290,9 +364,11 @@ export const useVisionAgentState = () => {
     updateAgent: updateAgent.mutate,
     startProcessing: startProcessing.mutate,
     reprocessFailedVideos: reprocessFailedVideos.mutate,
+    clearAllData: clearAllData.mutate,
     isInitializing: initializeAgent.isPending,
     isUpdating: updateAgent.isPending,
     isProcessing: startProcessing.isPending,
     isReprocessing: reprocessFailedVideos.isPending,
+    isClearing: clearAllData.isPending,
   };
 };
