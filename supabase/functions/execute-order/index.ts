@@ -103,10 +103,10 @@ serve(async (req) => {
         throw new Error('Credenciais da Binance não configuradas');
       }
 
-      // Descriptografar credenciais (base64 simples)
-      const masterKey = Deno.env.get('MASTER_KEY')!;
-      const apiKey = atob(credentials.encrypted_api_key || '');
-      const apiSecret = atob(credentials.encrypted_api_secret || '');
+      // Decrypt credentials (same method as sync-real-balance)
+      const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      const apiKey = atob(credentials.encrypted_api_key).replace(`${masterKey}:`, '');
+      const apiSecret = atob(credentials.encrypted_api_secret).replace(`${masterKey}:`, '');
 
       // Executar ordem na Binance
       const timestamp = Date.now();
