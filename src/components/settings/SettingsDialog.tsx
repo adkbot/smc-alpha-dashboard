@@ -61,7 +61,9 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       if (settings) {
         setBalance(settings.balance.toString());
         setLeverage(settings.leverage?.toString() || "20");
-        setRiskPerTrade(settings.risk_per_trade?.toString() || "0.06");
+        // Converter de decimal para porcentagem para exibição (0.06 -> 6)
+        const riskValue = settings.risk_per_trade || 0.06;
+        setRiskPerTrade(riskValue < 1 ? (riskValue * 100).toString() : riskValue.toString());
         setMaxPositions(settings.max_positions?.toString() || "3");
         setPaperMode(settings.paper_mode ?? true);
       }
@@ -93,13 +95,19 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       if (!user) throw new Error("Not authenticated");
 
       // Usar UPSERT em vez de UPDATE para criar se não existir
+      // Converter risk_per_trade para decimal se for maior que 1 (ex: 10% -> 0.10)
+      let riskValue = parseFloat(riskPerTrade);
+      if (riskValue > 1) {
+        riskValue = riskValue / 100; // Converter porcentagem para decimal
+      }
+      
       const { error } = await supabase
         .from("user_settings")
         .upsert({
           user_id: user.id,
           balance: parseFloat(balance),
           leverage: parseInt(leverage),
-          risk_per_trade: parseFloat(riskPerTrade),
+          risk_per_trade: riskValue,
           max_positions: parseInt(maxPositions),
           paper_mode: paperMode,
           updated_at: new Date().toISOString(),
