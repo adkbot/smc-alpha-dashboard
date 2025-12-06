@@ -10,6 +10,7 @@ import { VisionAgentPanel } from "@/components/vision/VisionAgentPanel";
 import { VisionAgentLogs } from "@/components/vision/VisionAgentLogs";
 import { VisionAgentVideos } from "@/components/vision/VisionAgentVideos";
 import { VisionAgentStrategies } from "@/components/vision/VisionAgentStrategies";
+import { VisionAgentSignals } from "@/components/vision/VisionAgentSignals";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 
 const Dashboard = () => {
@@ -40,6 +41,7 @@ const Dashboard = () => {
             <BotControlPanel />
             <VisionAgentPanel />
             <VisionAgentStrategies />
+            <VisionAgentSignals />
             <ActivePositionsPanel />
             <AccountPanel />
             <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />

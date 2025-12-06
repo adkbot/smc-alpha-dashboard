@@ -160,10 +160,18 @@ export const AccountPanel = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Sincronizar saldo automaticamente quando em modo REAL e conectado
+  // Auto-sync ao montar e periodicamente quando em modo REAL
   useEffect(() => {
     if (!paperMode && binanceStatus === "success" && user) {
+      // Sync imediato
       syncRealBalance();
+      
+      // Auto-sync a cada 30 segundos em modo REAL
+      const syncInterval = setInterval(() => {
+        syncRealBalance();
+      }, 30000);
+      
+      return () => clearInterval(syncInterval);
     }
   }, [paperMode, binanceStatus, user]);
 

@@ -34,21 +34,21 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
   const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<"PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | null>(null);
 
-  // Generate signals based on POIs
+  // Generate signals based on POIs - RELAXADO
   const signals = useMemo(() => {
     if (!mtfData?.currentTimeframe?.pois || !realtimePrice) return [];
     
     return mtfData.currentTimeframe.pois
       .filter(poi => {
-        // Alta confluência (>= 75%)
-        if (poi.confluenceScore < 75) return false;
+        // Confluência relaxada (>= 55%)
+        if (poi.confluenceScore < 55) return false;
         
-        // Preço próximo do POI (até 0.8% de distância)
+        // Preço próximo do POI (até 2% de distância) - relaxado de 0.8%
         const distance = Math.abs(realtimePrice - poi.price) / poi.price;
-        if (distance > 0.008) return false;
+        if (distance > 0.02) return false;
         
-        // RR mínimo de 1:3
-        if (poi.riskReward < 3) return false;
+        // RR mínimo de 1:1.5 - relaxado de 1:3
+        if (poi.riskReward < 1.5) return false;
         
         return true;
       })
