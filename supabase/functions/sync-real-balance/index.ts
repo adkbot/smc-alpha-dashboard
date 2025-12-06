@@ -12,6 +12,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log('🔄 Starting balance sync...');
+    
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -22,13 +24,17 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
+      console.error('❌ Auth error:', authError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const { broker_type } = await req.json();
+    console.log('✅ User authenticated:', user.id);
+
+    const { broker_type, account_type = 'futures' } = await req.json();
+    console.log('📋 Request params:', { broker_type, account_type });
 
     const { data: credentials, error: credError } = await supabaseClient
       .from('user_api_credentials')
@@ -38,6 +44,7 @@ serve(async (req) => {
       .single();
 
     if (credError || !credentials) {
+      console.error('❌ Credentials error:', credError);
       return new Response(
         JSON.stringify({ 
           error: 'No credentials found',
@@ -50,18 +57,25 @@ serve(async (req) => {
       );
     }
 
+    console.log('✅ Credentials found');
+
     // Decrypt credentials
     const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const apiKey = atob(credentials.encrypted_api_key).replace(`${masterKey}:`, '');
     const apiSecret = atob(credentials.encrypted_api_secret).replace(`${masterKey}:`, '');
+    
+    console.log('🔑 API Key (first 8 chars):', apiKey.substring(0, 8) + '...');
 
-    let balance = 0;
+    let spotBalance = 0;
+    let futuresBalance = 0;
+    let totalBalance = 0;
+    let balanceDetails: any = {};
 
     if (broker_type === 'binance') {
-      try {
-        const timestamp = Date.now();
-        const params = `timestamp=${timestamp}`;
-        
+      const timestamp = Date.now();
+      
+      // Helper function to create signature
+      const createSignature = async (params: string) => {
         const encoder = new TextEncoder();
         const keyData = encoder.encode(apiSecret);
         const msgData = encoder.encode(params);
@@ -75,57 +89,131 @@ serve(async (req) => {
         );
         
         const signature = await globalThis.crypto.subtle.sign("HMAC", key, msgData);
-        const signatureHex = Array.from(new Uint8Array(signature))
+        return Array.from(new Uint8Array(signature))
           .map(b => b.toString(16).padStart(2, '0'))
           .join('');
+      };
 
-        const response = await fetch(
-          `https://api.binance.com/api/v3/account?${params}&signature=${signatureHex}`,
-          {
-            headers: {
-              'X-MBX-APIKEY': apiKey,
-            },
+      // Fetch SPOT balance
+      if (account_type === 'spot' || account_type === 'both') {
+        try {
+          console.log('📊 Fetching SPOT balance...');
+          const spotParams = `timestamp=${timestamp}`;
+          const spotSignature = await createSignature(spotParams);
+          
+          const spotResponse = await fetch(
+            `https://api.binance.com/api/v3/account?${spotParams}&signature=${spotSignature}`,
+            {
+              headers: { 'X-MBX-APIKEY': apiKey },
+            }
+          );
+
+          if (spotResponse.ok) {
+            const spotData = await spotResponse.json();
+            const usdtBalance = spotData.balances?.find((b: any) => b.asset === 'USDT');
+            spotBalance = parseFloat(usdtBalance?.free || '0') + parseFloat(usdtBalance?.locked || '0');
+            console.log('✅ SPOT USDT Balance:', spotBalance);
+            balanceDetails.spot = {
+              usdt: spotBalance,
+              allAssets: spotData.balances?.filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+            };
+          } else {
+            const errorText = await spotResponse.text();
+            console.error('❌ SPOT API Error:', spotResponse.status, errorText);
+            balanceDetails.spotError = errorText;
           }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          // Calculate USDT balance
-          const usdtBalance = data.balances.find((b: any) => b.asset === 'USDT');
-          balance = parseFloat(usdtBalance?.free || '0') + parseFloat(usdtBalance?.locked || '0');
-        } else {
-          throw new Error('Failed to fetch Binance balance');
+        } catch (error) {
+          console.error('❌ SPOT fetch error:', error);
+          balanceDetails.spotError = error instanceof Error ? error.message : 'Unknown error';
         }
-      } catch (error) {
-        console.error('Binance balance fetch error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        throw new Error(`Failed to sync Binance balance: ${errorMessage}`);
       }
+
+      // Fetch FUTURES balance
+      if (account_type === 'futures' || account_type === 'both') {
+        try {
+          console.log('📊 Fetching FUTURES balance...');
+          const futuresTimestamp = Date.now();
+          const futuresParams = `timestamp=${futuresTimestamp}`;
+          const futuresSignature = await createSignature(futuresParams);
+          
+          const futuresResponse = await fetch(
+            `https://fapi.binance.com/fapi/v2/balance?${futuresParams}&signature=${futuresSignature}`,
+            {
+              headers: { 'X-MBX-APIKEY': apiKey },
+            }
+          );
+
+          if (futuresResponse.ok) {
+            const futuresData = await futuresResponse.json();
+            console.log('📋 FUTURES raw response:', JSON.stringify(futuresData).substring(0, 500));
+            
+            const usdtAsset = futuresData?.find((b: any) => b.asset === 'USDT');
+            futuresBalance = parseFloat(usdtAsset?.balance || '0');
+            console.log('✅ FUTURES USDT Balance:', futuresBalance);
+            balanceDetails.futures = {
+              usdt: futuresBalance,
+              availableBalance: parseFloat(usdtAsset?.availableBalance || '0'),
+              crossWalletBalance: parseFloat(usdtAsset?.crossWalletBalance || '0'),
+              allAssets: futuresData?.filter((b: any) => parseFloat(b.balance) > 0)
+            };
+          } else {
+            const errorText = await futuresResponse.text();
+            console.error('❌ FUTURES API Error:', futuresResponse.status, errorText);
+            balanceDetails.futuresError = errorText;
+          }
+        } catch (error) {
+          console.error('❌ FUTURES fetch error:', error);
+          balanceDetails.futuresError = error instanceof Error ? error.message : 'Unknown error';
+        }
+      }
+
+      // Calculate total based on account type preference
+      if (account_type === 'spot') {
+        totalBalance = spotBalance;
+      } else if (account_type === 'futures') {
+        totalBalance = futuresBalance;
+      } else {
+        totalBalance = spotBalance + futuresBalance;
+      }
+
+      console.log('💰 Final balance calculation:', {
+        spotBalance,
+        futuresBalance,
+        totalBalance,
+        accountType: account_type
+      });
+
     } else if (broker_type === 'forex') {
-      // Forex balance sync would require broker-specific implementation
       throw new Error('Forex balance sync not yet implemented for this broker');
     }
 
     // Update user settings with new balance
     const { error: updateError } = await supabaseClient
       .from('user_settings')
-      .update({ balance })
+      .update({ balance: totalBalance })
       .eq('user_id', user.id);
 
     if (updateError) {
+      console.error('❌ Update error:', updateError);
       throw updateError;
     }
+
+    console.log('✅ Balance updated in database:', totalBalance);
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        balance,
-        message: `Balance synchronized: $${balance.toFixed(2)}`,
+        balance: totalBalance,
+        spotBalance,
+        futuresBalance,
+        accountType: account_type,
+        details: balanceDetails,
+        message: `Balance synchronized: $${totalBalance.toFixed(2)} (SPOT: $${spotBalance.toFixed(2)}, FUTURES: $${futuresBalance.toFixed(2)})`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in sync-real-balance:', error);
+    console.error('❌ Error in sync-real-balance:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
       JSON.stringify({ 
