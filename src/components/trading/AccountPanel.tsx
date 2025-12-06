@@ -120,24 +120,31 @@ export const AccountPanel = () => {
 
     setSyncingBalance(true);
     try {
+      // Buscar da conta FUTURES por padrão (onde geralmente está o saldo de trading)
       const { data, error } = await supabase.functions.invoke("sync-real-balance", {
-        body: { broker_type: "binance" },
+        body: { broker_type: "binance", account_type: "futures" },
       });
 
       if (error) throw error;
 
-      if (data?.balance) {
+      if (data?.success) {
         setBalance(data.balance);
+        const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
+        const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
+        const accountInfo = [spotInfo, futuresInfo].filter(Boolean).join(' | ');
+        
         toast({
-          title: "Saldo sincronizado",
-          description: `Saldo real: $${data.balance.toFixed(2)}`,
+          title: "Saldo Sincronizado",
+          description: `Total: $${data.balance.toFixed(2)}${accountInfo ? ` (${accountInfo})` : ''}`,
         });
+      } else if (data?.error) {
+        throw new Error(data.error);
       }
     } catch (error: any) {
       console.error("Erro ao sincronizar saldo:", error);
       toast({
         title: "Erro ao sincronizar",
-        description: error.message,
+        description: error.message || "Falha ao sincronizar saldo da Binance",
         variant: "destructive",
       });
     } finally {
