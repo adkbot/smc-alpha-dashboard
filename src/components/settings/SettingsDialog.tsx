@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Check, X } from "lucide-react";
+import { Loader2, Check, X, AlertTriangle, RefreshCw } from "lucide-react";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -21,6 +21,7 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [testingBinance, setTestingBinance] = useState(false);
   const [testingForex, setTestingForex] = useState(false);
+  const [syncingBalance, setSyncingBalance] = useState(false);
   
   // Account Settings
   const [balance, setBalance] = useState("10000");
@@ -55,7 +56,7 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (settings) {
         setBalance(settings.balance.toString());
@@ -91,22 +92,31 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-    const { error } = await supabase
+      // Usar UPSERT em vez de UPDATE para criar se não existir
+      const { error } = await supabase
         .from("user_settings")
-        .update({
+        .upsert({
+          user_id: user.id,
           balance: parseFloat(balance),
           leverage: parseInt(leverage),
           risk_per_trade: parseFloat(riskPerTrade),
           max_positions: parseInt(maxPositions),
           paper_mode: paperMode,
-        })
-        .eq("user_id", user.id);
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
 
       if (error) throw error;
 
+      // Se desativou paper mode e tem Binance conectado, sincronizar saldo
+      if (!paperMode && binanceStatus === "success") {
+        await syncRealBalance();
+      }
+
       toast({
         title: "Configurações salvas",
-        description: "Suas configurações foram atualizadas com sucesso.",
+        description: paperMode 
+          ? "Suas configurações foram atualizadas com sucesso."
+          : "Modo REAL ativado. Saldo sincronizado da Binance.",
       });
     } catch (error: any) {
       toast({
@@ -116,6 +126,36 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const syncRealBalance = async () => {
+    setSyncingBalance(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-real-balance", {
+        body: { broker_type: "binance" },
+      });
+
+      if (error) throw error;
+
+      if (data?.balance) {
+        setBalance(data.balance.toString());
+        toast({
+          title: "Saldo sincronizado",
+          description: `Saldo real: $${data.balance.toFixed(2)}`,
+        });
+      }
+
+      return data;
+    } catch (error: any) {
+      console.error("Erro ao sincronizar saldo:", error);
+      toast({
+        title: "Erro ao sincronizar saldo",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingBalance(false);
     }
   };
 
@@ -164,11 +204,24 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       if (error) throw error;
 
       setBinanceStatus(data.status);
-      toast({
-        title: data.status === "success" ? "Conexão bem-sucedida" : "Falha na conexão",
-        description: data.message,
-        variant: data.status === "success" ? "default" : "destructive",
-      });
+      
+      if (data.status === "success") {
+        toast({
+          title: "Conexão bem-sucedida",
+          description: data.message,
+        });
+
+        // Se não está em paper mode, sincronizar saldo automaticamente
+        if (!paperMode) {
+          await syncRealBalance();
+        }
+      } else {
+        toast({
+          title: "Falha na conexão",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       setBinanceStatus("failed");
       toast({
@@ -277,14 +330,49 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           </TabsList>
 
           <TabsContent value="account" className="space-y-4">
+            {/* Aviso se modo REAL sem credenciais validadas */}
+            {!paperMode && binanceStatus !== "success" && (
+              <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-destructive">
+                  <strong>Atenção:</strong> Modo REAL ativado mas credenciais Binance não validadas. 
+                  Configure e teste suas credenciais na aba Binance.
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="balance">Saldo Inicial ($)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="balance">Saldo ($)</Label>
+                {!paperMode && binanceStatus === "success" && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={syncRealBalance}
+                    disabled={syncingBalance}
+                    className="h-7 text-xs"
+                  >
+                    {syncingBalance ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                    )}
+                    Sincronizar Binance
+                  </Button>
+                )}
+              </div>
               <Input
                 id="balance"
                 type="number"
                 value={balance}
                 onChange={(e) => setBalance(e.target.value)}
+                disabled={!paperMode && binanceStatus === "success"}
               />
+              {!paperMode && binanceStatus === "success" && (
+                <p className="text-xs text-muted-foreground">
+                  Saldo sincronizado da Binance. Use o botão para atualizar.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -318,8 +406,15 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="paper">Modo Paper Trading</Label>
+            <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-md">
+              <div>
+                <Label htmlFor="paper" className="text-base">Modo Paper Trading</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {paperMode 
+                    ? "Operações simuladas, sem dinheiro real" 
+                    : "⚠️ MODO REAL - Operações com dinheiro real na Binance"}
+                </p>
+              </div>
               <Switch
                 id="paper"
                 checked={paperMode}
@@ -338,6 +433,15 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               <h3 className="text-sm font-medium">Status da Conexão</h3>
               <StatusBadge status={binanceStatus} />
             </div>
+
+            {binanceStatus === "pending" && (
+              <div className="p-3 bg-warning/10 border border-warning/30 rounded-md flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-warning">
+                  Credenciais não testadas. Clique em "Testar Conexão" para validar.
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="binance-key">API Key</Label>
