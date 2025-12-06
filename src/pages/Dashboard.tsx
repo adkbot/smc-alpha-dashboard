@@ -10,12 +10,15 @@ import { VisionAgentPanel } from "@/components/vision/VisionAgentPanel";
 import { VisionAgentLogs } from "@/components/vision/VisionAgentLogs";
 import { VisionAgentVideos } from "@/components/vision/VisionAgentVideos";
 import { VisionAgentStrategies } from "@/components/vision/VisionAgentStrategies";
+import { LiquiditySweepPanel } from "@/components/trading/LiquiditySweepPanel";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { useCandleData } from "@/hooks/useCandleData";
 
 const Dashboard = () => {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [interval, setInterval] = useState("15m");
   const { data: mtfData } = useMultiTimeframeAnalysis(symbol, interval);
+  const { candles } = useCandleData(symbol, interval);
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -43,6 +46,7 @@ const Dashboard = () => {
             <ActivePositionsPanel />
             <AccountPanel />
             <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
+            <LiquiditySweepPanel candles={candles} isActive={true} />
             <VisionAgentLogs />
             <VisionAgentVideos />
             <TradingLogsPanel />
