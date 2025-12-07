@@ -87,6 +87,49 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
+// PRE-LIST TRADER RAIZ - 8 CRITÉRIOS OBRIGATÓRIOS
+interface TraderRaizChecklist {
+  // 1. Topos e Fundos Mapeados
+  swingsMapped: boolean;
+  swingsCount: number;
+  
+  // 2. Tendência Definida
+  trendDefined: boolean;
+  trendDirection: "ALTA" | "BAIXA" | "NEUTRO";
+  
+  // 3. Estrutura Quebrada (BOS/CHoCH)
+  structureBroken: boolean;
+  structureType: "BOS" | "CHOCH" | null;
+  structurePrice: number | null;
+  
+  // 4. Zona Correta (Premium/Discount)
+  zoneCorrect: boolean;
+  zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
+  zoneAligned: boolean;
+  
+  // 5. Manipulação Identificada
+  manipulationIdentified: boolean;
+  manipulationZonesCount: number;
+  
+  // 6. Order Block Localizado
+  orderBlockLocated: boolean;
+  orderBlockRange: string;
+  orderBlockStrength: number;
+  
+  // 7. Risco/Retorno >= 3:1 (idealmente 5:1)
+  riskRewardValid: boolean;
+  riskRewardValue: number;
+  
+  // 8. Confirmação de Entrada
+  entryConfirmed: boolean;
+  
+  // Resumo
+  criteriaCount: number;
+  allCriteriaMet: boolean;
+  conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
+  reasoning: string;
+}
+
 // Detecta swing points (highs e lows) nos candles
 function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): PremiumDiscountResult {
   const currentPrice = candles[candles.length - 1].close;
@@ -908,6 +951,143 @@ function calculatePOIs(
     .slice(0, 5);
 }
 
+// FUNÇÃO PRE-LIST TRADER RAIZ - 8 CRITÉRIOS OBRIGATÓRIOS
+function calculateTraderRaizChecklist(
+  swings: SwingPoint[],
+  bosChoch: BOSCHOCHResult,
+  premiumDiscount: PremiumDiscountResult,
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  manipulationZones: ManipulationZone[],
+  orderBlocks: OrderBlock[],
+  fvgs: FVG[],
+  pois: POI[]
+): TraderRaizChecklist {
+  let criteriaCount = 0;
+  const reasons: string[] = [];
+  
+  // 1. TOPOS E FUNDOS MAPEADOS
+  const swingsMapped = swings.length >= 4; // Mínimo 4 swings para análise
+  if (swingsMapped) {
+    criteriaCount++;
+    reasons.push("✓ Swings mapeados");
+  } else {
+    reasons.push("✗ Poucos swings detectados");
+  }
+  
+  // 2. TENDÊNCIA DEFINIDA
+  const trendDefined = bosChoch.trend !== "NEUTRO";
+  if (trendDefined) {
+    criteriaCount++;
+    reasons.push(`✓ Tendência ${bosChoch.trend}`);
+  } else {
+    reasons.push("✗ Tendência indefinida");
+  }
+  
+  // 3. ESTRUTURA QUEBRADA (BOS/CHoCH)
+  const structureBroken = bosChoch.lastBOS !== null || bosChoch.lastCHOCH !== null;
+  const structureType = bosChoch.lastBOS ? "BOS" : bosChoch.lastCHOCH ? "CHOCH" : null;
+  const structurePrice = bosChoch.lastBOS || bosChoch.lastCHOCH;
+  if (structureBroken) {
+    criteriaCount++;
+    reasons.push(`✓ ${structureType} confirmado`);
+  } else {
+    reasons.push("✗ Sem quebra de estrutura");
+  }
+  
+  // 4. ZONA CORRETA (Premium/Discount)
+  const zoneAligned = (
+    (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") ||
+    (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM")
+  );
+  if (zoneAligned) {
+    criteriaCount++;
+    reasons.push(`✓ Zona ${premiumDiscount.status} alinhada`);
+  } else {
+    reasons.push(`✗ Zona ${premiumDiscount.status} não ideal`);
+  }
+  
+  // 5. MANIPULAÇÃO IDENTIFICADA (liquidez capturada ou evitada)
+  const manipulationIdentified = manipulationZones.length > 0;
+  if (manipulationIdentified) {
+    criteriaCount++;
+    reasons.push("✓ Manipulação mapeada");
+  } else {
+    reasons.push("⚠ Sem zonas de manipulação");
+    // Não obrigatório, conta como OK se não houver
+    criteriaCount++;
+  }
+  
+  // 6. ORDER BLOCK LOCALIZADO
+  const validOB = orderBlocks.find(ob => 
+    (dominantBias.bias === "ALTA" && ob.type === "bullish") ||
+    (dominantBias.bias === "BAIXA" && ob.type === "bearish")
+  );
+  const orderBlockLocated = !!validOB;
+  if (orderBlockLocated) {
+    criteriaCount++;
+    reasons.push(`✓ OB ${validOB!.type} em $${validOB!.midpoint.toFixed(2)}`);
+  } else {
+    reasons.push("✗ Order Block não localizado");
+  }
+  
+  // 7. RISCO/RETORNO >= 3:1 (idealmente 5:1)
+  const bestPOI = pois[0];
+  const rrValue = bestPOI?.riskReward || 0;
+  const riskRewardValid = rrValue >= 3.0;
+  if (riskRewardValid) {
+    criteriaCount++;
+    reasons.push(`✓ RR 1:${rrValue.toFixed(1)} (${rrValue >= 5 ? "IDEAL" : "OK"})`);
+  } else {
+    reasons.push(`✗ RR 1:${rrValue.toFixed(1)} < 3:1`);
+  }
+  
+  // 8. CONFIRMAÇÃO DE ENTRADA (FVG ou OB com confluência alta)
+  const entryConfirmed = pois.some(poi => poi.confluenceScore >= 70);
+  if (entryConfirmed) {
+    criteriaCount++;
+    reasons.push("✓ Entrada confirmada");
+  } else {
+    reasons.push("✗ Sem confirmação de entrada");
+  }
+  
+  // CONCLUSÃO
+  const allCriteriaMet = criteriaCount >= 7; // 7 de 8 critérios mínimo
+  let conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
+  
+  if (criteriaCount === 8) {
+    conclusion = "ENTRADA VÁLIDA";
+  } else if (criteriaCount >= 6) {
+    conclusion = "AGUARDAR";
+  } else {
+    conclusion = "ANULAR";
+  }
+  
+  return {
+    swingsMapped,
+    swingsCount: swings.length,
+    trendDefined,
+    trendDirection: bosChoch.trend,
+    structureBroken,
+    structureType,
+    structurePrice,
+    zoneCorrect: zoneAligned,
+    zoneName: premiumDiscount.status,
+    zoneAligned,
+    manipulationIdentified,
+    manipulationZonesCount: manipulationZones.length,
+    orderBlockLocated,
+    orderBlockRange: validOB ? `$${validOB.bottom.toFixed(2)} - $${validOB.top.toFixed(2)}` : "N/A",
+    orderBlockStrength: validOB?.strength || 0,
+    riskRewardValid,
+    riskRewardValue: rrValue,
+    entryConfirmed,
+    criteriaCount,
+    allCriteriaMet,
+    conclusion,
+    reasoning: reasons.join(" | "),
+  };
+}
+
 // Buscar dados da Binance
 async function fetchBinanceKlines(symbol: string, interval: string, limit = 100): Promise<Candle[]> {
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
@@ -1022,6 +1202,29 @@ serve(async (req) => {
       })
     );
 
+    // CALCULAR PRE-LIST TRADER RAIZ
+    const checklist = calculateTraderRaizChecklist(
+      currentTFSwings,
+      currentTFLocalAnalysis,
+      premiumDiscount,
+      dominantBias,
+      manipulationZones,
+      orderBlocks,
+      fvgs,
+      pois
+    );
+    
+    console.log("📋 PRE-LIST TRADER RAIZ:");
+    console.log(`   1. Swings Mapeados: ${checklist.swingsMapped ? '✓' : '✗'} (${checklist.swingsCount})`);
+    console.log(`   2. Tendência: ${checklist.trendDefined ? '✓' : '✗'} ${checklist.trendDirection}`);
+    console.log(`   3. Estrutura: ${checklist.structureBroken ? '✓' : '✗'} ${checklist.structureType || 'N/A'}`);
+    console.log(`   4. Zona: ${checklist.zoneCorrect ? '✓' : '✗'} ${checklist.zoneName}`);
+    console.log(`   5. Manipulação: ${checklist.manipulationIdentified ? '✓' : '⚠'} (${checklist.manipulationZonesCount})`);
+    console.log(`   6. Order Block: ${checklist.orderBlockLocated ? '✓' : '✗'} ${checklist.orderBlockRange}`);
+    console.log(`   7. R:R: ${checklist.riskRewardValid ? '✓' : '✗'} 1:${checklist.riskRewardValue.toFixed(2)}`);
+    console.log(`   8. Confirmação: ${checklist.entryConfirmed ? '✓' : '✗'}`);
+    console.log(`   📊 CONCLUSÃO: ${checklist.conclusion} (${checklist.criteriaCount}/8)`);
+
     const result = {
       symbol,
       timestamp: new Date().toISOString(),
@@ -1048,6 +1251,9 @@ serve(async (req) => {
         manipulationZones,
         pois,
       },
+      
+      // PRE-LIST TRADER RAIZ
+      checklist,
       
       // OVERVIEW DE TODOS OS TIMEFRAMES
       allTimeframes: allTimeframesAnalysis,

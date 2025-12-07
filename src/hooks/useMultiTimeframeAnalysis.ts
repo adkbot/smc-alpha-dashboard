@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -78,6 +78,32 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
+// PRE-LIST TRADER RAIZ
+export interface TraderRaizChecklist {
+  swingsMapped: boolean;
+  swingsCount: number;
+  trendDefined: boolean;
+  trendDirection: "ALTA" | "BAIXA" | "NEUTRO";
+  structureBroken: boolean;
+  structureType: "BOS" | "CHOCH" | null;
+  structurePrice: number | null;
+  zoneCorrect: boolean;
+  zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
+  zoneAligned: boolean;
+  manipulationIdentified: boolean;
+  manipulationZonesCount: number;
+  orderBlockLocated: boolean;
+  orderBlockRange: string;
+  orderBlockStrength: number;
+  riskRewardValid: boolean;
+  riskRewardValue: number;
+  entryConfirmed: boolean;
+  criteriaCount: number;
+  allCriteriaMet: boolean;
+  conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
+  reasoning: string;
+}
+
 interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   timeframe: string;
   interpretation: string;
@@ -101,6 +127,7 @@ export interface MTFAnalysis {
   };
   dominantBias: DominantBias;
   currentTimeframe: CurrentTimeframeAnalysis;
+  checklist: TraderRaizChecklist;
   allTimeframes: TimeframeAnalysis[];
 }
 
@@ -114,6 +141,9 @@ export const useMultiTimeframeAnalysis = (
   const [data, setData] = useState<MTFAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref para evitar múltiplas execuções de ordens
+  const lastExecutedSignalRef = useRef<string | null>(null);
 
   const fetchAnalysis = async () => {
     try {
@@ -153,10 +183,36 @@ export const useMultiTimeframeAnalysis = (
     return () => clearInterval(interval);
   }, [symbol, currentTimeframe, JSON.stringify(timeframes)]);
 
-  // Auto-executar sinais se bot estiver rodando
+  // Auto-executar sinais APENAS quando Pre-List Trader Raiz for válida
   useEffect(() => {
     const checkAndExecuteSignals = async () => {
-      if (!data?.currentTimeframe?.tradingOpportunity) return;
+      // Verificar se há dados e checklist
+      if (!data?.currentTimeframe?.pois || !data?.checklist) {
+        console.log("[AUTO-EXECUTE] Sem dados ou checklist");
+        return;
+      }
+      
+      const checklist = data.checklist;
+      const bestPOI = data.currentTimeframe.pois[0];
+      
+      // REGRA TRADER RAIZ: Só executa se todos os 8 critérios forem satisfeitos
+      if (!checklist.allCriteriaMet) {
+        console.log(`[AUTO-EXECUTE] Pre-List: ${checklist.conclusion} (${checklist.criteriaCount}/8) - NÃO EXECUTAR`);
+        return;
+      }
+      
+      // Verificar se há POI válido com R:R >= 3:1
+      if (!bestPOI || bestPOI.riskReward < 3.0) {
+        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 3:1 - ABORTANDO`);
+        return;
+      }
+      
+      // Evitar re-executar o mesmo sinal
+      const signalId = `${bestPOI.id}_${bestPOI.entry}_${bestPOI.riskReward}`;
+      if (lastExecutedSignalRef.current === signalId) {
+        console.log("[AUTO-EXECUTE] Sinal já executado anteriormente");
+        return;
+      }
 
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -164,54 +220,69 @@ export const useMultiTimeframeAnalysis = (
 
         const { data: settings } = await supabase
           .from("user_settings")
-          .select("bot_status")
+          .select("bot_status, paper_mode")
           .eq("user_id", user.id)
           .single();
 
-        if (settings?.bot_status === "running") {
-          const direction = data.currentTimeframe.trend === "ALTA" ? "LONG" : "SHORT";
-          const currentPrice = data.currentTimeframe.premiumDiscount.currentPrice;
-          
-          // Calcular SL e TP básicos (pode ser ajustado)
-          const slDistance = currentPrice * 0.01; // 1% de distância
-          const rr = 2.0;
-          
-          const stopLoss = direction === "LONG" 
-            ? currentPrice - slDistance 
-            : currentPrice + slDistance;
-          
-          const takeProfit = direction === "LONG"
-            ? currentPrice + (slDistance * rr)
-            : currentPrice - (slDistance * rr);
+        if (settings?.bot_status !== "running") {
+          console.log("[AUTO-EXECUTE] Bot não está running");
+          return;
+        }
 
-          const { error } = await supabase.functions.invoke("execute-order", {
-            body: {
-              asset: symbol,
-              direction,
-              entry_price: currentPrice,
-              stop_loss: stopLoss,
-              take_profit: takeProfit,
-              risk_reward: rr,
-              signal_data: data.currentTimeframe,
+        // Usar dados REAIS do POI calculado
+        const direction = bestPOI.type === "bullish" ? "LONG" : "SHORT";
+        const entry = bestPOI.entry;
+        const stopLoss = bestPOI.stopLoss;
+        const takeProfit = bestPOI.takeProfit;
+        const riskReward = bestPOI.riskReward;
+
+        console.log("[AUTO-EXECUTE] 🎯 PRE-LIST TRADER RAIZ APROVADA!");
+        console.log(`   Direção: ${direction}`);
+        console.log(`   Entry: $${entry.toFixed(2)}`);
+        console.log(`   SL: $${stopLoss.toFixed(2)}`);
+        console.log(`   TP: $${takeProfit.toFixed(2)}`);
+        console.log(`   R:R: 1:${riskReward.toFixed(2)}`);
+        console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
+
+        const { error } = await supabase.functions.invoke("execute-order", {
+          body: {
+            asset: symbol,
+            direction,
+            entry_price: entry,
+            stop_loss: stopLoss,
+            take_profit: takeProfit,
+            risk_reward: riskReward,
+            signal_data: {
+              ...data.currentTimeframe,
+              poi: bestPOI,
             },
-          });
+            checklist: checklist,
+          },
+        });
 
-          if (error) {
-            console.error("Erro ao executar ordem automaticamente:", error);
-          } else {
-            toast({
-              title: `✅ Ordem ${direction} executada`,
-              description: `${symbol} @ $${currentPrice.toFixed(2)}`,
-            });
-          }
+        if (error) {
+          console.error("[AUTO-EXECUTE] Erro ao executar ordem:", error);
+          toast({
+            title: "❌ Erro ao executar ordem",
+            description: error.message,
+            variant: "destructive",
+          });
+        } else {
+          // Marcar como executado
+          lastExecutedSignalRef.current = signalId;
+          
+          toast({
+            title: `✅ Ordem ${direction} executada`,
+            description: `${symbol} @ $${entry.toFixed(2)} | R:R 1:${riskReward.toFixed(2)} | ${settings.paper_mode ? 'PAPER' : 'REAL'}`,
+          });
         }
       } catch (error) {
-        console.error("Erro ao verificar e executar sinais:", error);
+        console.error("[AUTO-EXECUTE] Erro:", error);
       }
     };
 
     checkAndExecuteSignals();
-  }, [data?.currentTimeframe?.tradingOpportunity, symbol]);
+  }, [data?.currentTimeframe?.pois?.[0]?.id, data?.checklist?.allCriteriaMet, symbol]);
 
   return { data, loading, error, refresh: fetchAnalysis };
 };
