@@ -1,9 +1,9 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { MTFAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { MTFAnalysis, TraderRaizChecklist } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SMCPanelProps {
@@ -633,6 +633,134 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             <p className="text-xs text-muted-foreground text-center">
               ⏳ Calculando Range & Filtro...
             </p>
+          </Card>
+        </div>
+      )}
+
+      {/* PRE-LIST TRADER RAIZ - STATUS DO CHECKLIST */}
+      {mtfData?.checklist && (
+        <div className={`p-4 border-b-2 ${
+          mtfData.checklist.conclusion === "ENTRADA VÁLIDA" 
+            ? "border-success bg-success/5" 
+            : mtfData.checklist.conclusion === "AGUARDAR"
+            ? "border-warning bg-warning/5"
+            : "border-destructive bg-destructive/5"
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+              📋 PRE-LIST TRADER RAIZ
+            </h3>
+            <Badge className={`text-xs font-bold ${
+              mtfData.checklist.conclusion === "ENTRADA VÁLIDA"
+                ? "bg-success"
+                : mtfData.checklist.conclusion === "AGUARDAR"
+                ? "bg-warning text-warning-foreground"
+                : "bg-destructive"
+            }`}>
+              {mtfData.checklist.criteriaCount}/8 ✓
+            </Badge>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {/* 1. Swings Mapeados */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.swingsMapped ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>Topos/Fundos ({mtfData.checklist.swingsCount})</span>
+            </div>
+            
+            {/* 2. Tendência */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.trendDefined ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>Tendência: {mtfData.checklist.trendDirection}</span>
+            </div>
+            
+            {/* 3. Estrutura */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.structureBroken ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>Estrutura: {mtfData.checklist.structureType || "N/A"}</span>
+            </div>
+            
+            {/* 4. Zona */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.zoneCorrect ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>Zona: {mtfData.checklist.zoneName}</span>
+            </div>
+            
+            {/* 5. Manipulação */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.manipulationIdentified ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <AlertCircle className="h-3 w-3 text-warning" />
+              )}
+              <span>Manipulação ({mtfData.checklist.manipulationZonesCount})</span>
+            </div>
+            
+            {/* 6. Order Block */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.orderBlockLocated ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>OB: {mtfData.checklist.orderBlockRange}</span>
+            </div>
+            
+            {/* 7. R:R */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.riskRewardValid ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>R:R 1:{mtfData.checklist.riskRewardValue.toFixed(1)}</span>
+            </div>
+            
+            {/* 8. Confirmação */}
+            <div className="flex items-center gap-1 text-[10px]">
+              {mtfData.checklist.entryConfirmed ? (
+                <CheckCircle className="h-3 w-3 text-success" />
+              ) : (
+                <XCircle className="h-3 w-3 text-destructive" />
+              )}
+              <span>Confirmação</span>
+            </div>
+          </div>
+          
+          {/* Conclusão */}
+          <Card className={`p-2 text-center ${
+            mtfData.checklist.conclusion === "ENTRADA VÁLIDA"
+              ? "bg-success/20 border-success"
+              : mtfData.checklist.conclusion === "AGUARDAR"
+              ? "bg-warning/20 border-warning"
+              : "bg-destructive/20 border-destructive"
+          }`}>
+            <div className="text-sm font-bold">
+              {mtfData.checklist.conclusion === "ENTRADA VÁLIDA" && "✅ ENTRADA VÁLIDA"}
+              {mtfData.checklist.conclusion === "AGUARDAR" && "⏳ AGUARDAR"}
+              {mtfData.checklist.conclusion === "ANULAR" && "❌ ANULAR"}
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-1">
+              {mtfData.checklist.riskRewardValid 
+                ? `R:R 1:${mtfData.checklist.riskRewardValue.toFixed(1)} ${mtfData.checklist.riskRewardValue >= 5 ? "(IDEAL)" : mtfData.checklist.riskRewardValue >= 3 ? "(OK)" : "(BAIXO)"}`
+                : "R:R < 3:1 - Mínimo não atingido"}
+            </div>
           </Card>
         </div>
       )}
