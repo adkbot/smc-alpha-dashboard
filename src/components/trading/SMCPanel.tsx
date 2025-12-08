@@ -34,21 +34,24 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
   const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<"PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | null>(null);
 
-  // Generate signals based on POIs - RELAXADO
+  // Generate signals based on POIs - SINCRONIZADO com checklist Trader Raiz
   const signals = useMemo(() => {
     if (!mtfData?.currentTimeframe?.pois || !realtimePrice) return [];
     
-    return mtfData.currentTimeframe.pois
+    // Ordenar POIs por R:R descendente para priorizar os melhores
+    const sortedPois = [...mtfData.currentTimeframe.pois].sort((a, b) => b.riskReward - a.riskReward);
+    
+    return sortedPois
       .filter(poi => {
-        // Confluência relaxada (>= 55%)
-        if (poi.confluenceScore < 55) return false;
+        // Confluência mínima 70% (sincronizado com checklist)
+        if (poi.confluenceScore < 70) return false;
         
-        // Preço próximo do POI (até 2% de distância) - relaxado de 0.8%
+        // Preço próximo do POI (até 2% de distância)
         const distance = Math.abs(realtimePrice - poi.price) / poi.price;
         if (distance > 0.02) return false;
         
-        // RR mínimo de 1:1.5 - relaxado de 1:3
-        if (poi.riskReward < 1.5) return false;
+        // RR mínimo de 3:1 (sincronizado com checklist Trader Raiz)
+        if (poi.riskReward < 3.0) return false;
         
         return true;
       })
