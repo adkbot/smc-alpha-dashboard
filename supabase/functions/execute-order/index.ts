@@ -392,29 +392,78 @@ serve(async (req) => {
     // FÓRMULA CORRETA: Quantity = Risco USDT / Distância SL USDT
     let quantityBTC = riskAmountUSDT / stopDistanceUSDT;
     
-    // Calcular valores para verificação de margem COM TAXA DE ABERTURA
-    const notionalValueUSDT = quantityBTC * entry_price;
-    const openingFeeUSDT = notionalValueUSDT * OPENING_FEE_RATE; // Taxa de 0.04%
-    const requiredMarginUSDT = (notionalValueUSDT / leverage) + openingFeeUSDT;
-    const availableMarginUSDT = balanceUSDT * MARGIN_BUFFER; // 85% do saldo
+    // ========================================
+    // 🛡️ PROTEÇÃO DE MARGEM MÁXIMA (baseada na % configurada pelo usuário)
+    // ========================================
+    
+    // Margem MÁXIMA permitida = mesma % do risco configurado pelo usuário
+    const maxMarginAllowedUSDT = balanceUSDT * riskPercentage;
     
     console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] 🛡️ PROTEÇÃO DE MARGEM MÁXIMA ATIVA:`);
+    console.log(`[EXECUTE-ORDER] Limite de margem: ${(riskPercentage * 100).toFixed(1)}% = $${maxMarginAllowedUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    
+    // Calcular valores iniciais para verificação de margem COM TAXA DE ABERTURA
+    let notionalValueUSDT = quantityBTC * entry_price;
+    let openingFeeUSDT = notionalValueUSDT * OPENING_FEE_RATE; // Taxa de 0.04%
+    let requiredMarginUSDT = (notionalValueUSDT / leverage) + openingFeeUSDT;
+    const availableMarginUSDT = balanceUSDT * MARGIN_BUFFER; // 85% do saldo (backup)
+    
     console.log(`[EXECUTE-ORDER] 📊 CÁLCULO DE POSIÇÃO USDT-M FUTURES:`);
     console.log(`[EXECUTE-ORDER] Saldo LOCAL: $${settings.balance.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Saldo BINANCE REAL: $${realBinanceBalance.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Saldo USADO: $${balanceUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Risco: ${(riskPercentage * 100).toFixed(1)}% = $${riskAmountUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Risco configurado: ${(riskPercentage * 100).toFixed(1)}% = $${riskAmountUSDT.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Entry: $${entry_price} | SL: $${stop_loss}`);
     console.log(`[EXECUTE-ORDER] Distância SL: $${stopDistanceUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Quantity inicial: ${quantityBTC.toFixed(6)} BTC`);
-    console.log(`[EXECUTE-ORDER] Nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Quantity INICIAL (baseada no risco): ${quantityBTC.toFixed(6)} BTC`);
+    console.log(`[EXECUTE-ORDER] Nocional INICIAL: $${notionalValueUSDT.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Taxa abertura (0.04%): $${openingFeeUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Margem requerida (c/taxa): $${requiredMarginUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Margem disponível (${MARGIN_BUFFER * 100}%): $${availableMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem REQUERIDA (c/taxa): $${requiredMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem MÁXIMA PERMITIDA: $${maxMarginAllowedUSDT.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Alavancagem: ${leverage}x`);
     
     // ========================================
-    // 8. REDUÇÃO AUTOMÁTICA SE MARGEM INSUFICIENTE
+    // 🛡️ APLICAR PROTEÇÃO: Limitar margem à % configurada pelo usuário
+    // ========================================
+    
+    let marginProtectionApplied = false;
+    
+    if (requiredMarginUSDT > maxMarginAllowedUSDT) {
+      marginProtectionApplied = true;
+      console.log(`[EXECUTE-ORDER] ==========================================`);
+      console.log(`[EXECUTE-ORDER] 🛡️ PROTEÇÃO DE MARGEM ATIVADA!`);
+      console.log(`[EXECUTE-ORDER] Margem calculada: $${requiredMarginUSDT.toFixed(2)} > Limite: $${maxMarginAllowedUSDT.toFixed(2)}`);
+      
+      // Recalcular quantidade baseado na margem máxima permitida
+      // notional = (margin - fee) * leverage
+      // Mas fee depende de notional, então precisamos resolver:
+      // margin = notional/leverage + notional*0.0004
+      // margin = notional * (1/leverage + 0.0004)
+      // notional = margin / (1/leverage + 0.0004)
+      const maxNotionalForMargin = maxMarginAllowedUSDT / (1/leverage + OPENING_FEE_RATE);
+      quantityBTC = maxNotionalForMargin / entry_price;
+      
+      // Recalcular valores com quantidade ajustada
+      notionalValueUSDT = quantityBTC * entry_price;
+      openingFeeUSDT = notionalValueUSDT * OPENING_FEE_RATE;
+      requiredMarginUSDT = (notionalValueUSDT / leverage) + openingFeeUSDT;
+      
+      // Calcular o novo risco REAL (pode ser menor que o configurado)
+      const newRiskReal = quantityBTC * stopDistanceUSDT;
+      const newRiskPercent = (newRiskReal / balanceUSDT) * 100;
+      
+      console.log(`[EXECUTE-ORDER] ✅ Quantity AJUSTADA: ${quantityBTC.toFixed(6)} BTC`);
+      console.log(`[EXECUTE-ORDER] Novo nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Nova margem: $${requiredMarginUSDT.toFixed(2)} USDT (dentro do limite!)`);
+      console.log(`[EXECUTE-ORDER] Novo risco REAL: $${newRiskReal.toFixed(2)} USDT (${newRiskPercent.toFixed(2)}%)`);
+      console.log(`[EXECUTE-ORDER] ⚠️ Risco foi reduzido de ${(riskPercentage * 100).toFixed(1)}% para ${newRiskPercent.toFixed(2)}% para caber na margem`);
+      console.log(`[EXECUTE-ORDER] ==========================================`);
+    }
+    
+    // ========================================
+    // 9. VERIFICAÇÃO DE SEGURANÇA ADICIONAL (85% buffer)
     // ========================================
     
     let adjustmentAttempts = 0;
@@ -422,36 +471,30 @@ serve(async (req) => {
     
     while (requiredMarginUSDT > availableMarginUSDT && adjustmentAttempts < MAX_ADJUSTMENT_ATTEMPTS) {
       adjustmentAttempts++;
-      console.log(`[EXECUTE-ORDER] ⚠️ Margem insuficiente! Tentativa ${adjustmentAttempts}/${MAX_ADJUSTMENT_ATTEMPTS} - Reduzindo quantidade em 10%...`);
+      console.log(`[EXECUTE-ORDER] ⚠️ Margem ainda excede buffer de segurança! Tentativa ${adjustmentAttempts}/${MAX_ADJUSTMENT_ATTEMPTS} - Reduzindo quantidade em 10%...`);
       
       // Reduzir quantidade em 10%
       quantityBTC = quantityBTC * 0.9;
       
       // Recalcular margem
-      const newNotional = quantityBTC * entry_price;
-      const newOpeningFee = newNotional * OPENING_FEE_RATE;
-      const newRequiredMargin = (newNotional / leverage) + newOpeningFee;
+      notionalValueUSDT = quantityBTC * entry_price;
+      openingFeeUSDT = notionalValueUSDT * OPENING_FEE_RATE;
+      requiredMarginUSDT = (notionalValueUSDT / leverage) + openingFeeUSDT;
       
       console.log(`[EXECUTE-ORDER] Nova quantity: ${quantityBTC.toFixed(6)} BTC`);
-      console.log(`[EXECUTE-ORDER] Novo nocional: $${newNotional.toFixed(2)} USDT`);
-      console.log(`[EXECUTE-ORDER] Nova margem requerida: $${newRequiredMargin.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Novo nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Nova margem requerida: $${requiredMarginUSDT.toFixed(2)} USDT`);
       
-      if (newRequiredMargin <= availableMarginUSDT) {
-        console.log(`[EXECUTE-ORDER] ✅ Margem suficiente após ajuste!`);
+      if (requiredMarginUSDT <= availableMarginUSDT) {
+        console.log(`[EXECUTE-ORDER] ✅ Margem dentro do buffer de segurança!`);
         break;
       }
     }
     
     // Se ainda não couber após 5 tentativas, calcular o máximo possível
     if (adjustmentAttempts >= MAX_ADJUSTMENT_ATTEMPTS) {
-      console.log(`[EXECUTE-ORDER] 🔧 Calculando quantidade máxima possível...`);
+      console.log(`[EXECUTE-ORDER] 🔧 Calculando quantidade máxima possível baseada no buffer de segurança...`);
       
-      // Máximo nocional possível: margem disponível * leverage (descontando taxa)
-      // notional = margin * leverage
-      // requiredMargin = notional/leverage + notional*0.0004
-      // margin = notional/leverage + notional*0.0004
-      // margin = notional * (1/leverage + 0.0004)
-      // notional = margin / (1/leverage + 0.0004)
       const maxNotionalUSDT = availableMarginUSDT / (1/leverage + OPENING_FEE_RATE);
       quantityBTC = maxNotionalUSDT / entry_price;
       
