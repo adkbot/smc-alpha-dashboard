@@ -7,6 +7,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Função para criar assinatura HMAC-SHA256 (igual ao execute-order)
+async function createBinanceSignature(queryString: string, apiSecret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(apiSecret);
+  const messageData = encoder.encode(queryString);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+  const hashArray = Array.from(new Uint8Array(signature));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -51,10 +70,12 @@ serve(async (req) => {
       .eq('user_id', position.user_id)
       .single();
 
-    // 4. Executar fechamento na Binance (se Real Mode)
+    // 4. Executar fechamento na Binance FUTURES (se Real Mode)
     let binanceOrderId = `PAPER_CLOSE_${Date.now()}`;
 
     if (settings && !settings.paper_mode) {
+      console.log(`[CLOSE-POSITION] Modo REAL - Executando ordem na Binance FUTURES`);
+      
       const { data: credentials } = await supabase
         .from('user_api_credentials')
         .select('encrypted_api_key, encrypted_api_secret')
@@ -64,27 +85,68 @@ serve(async (req) => {
         .single();
 
       if (credentials) {
-        const apiKey = atob(credentials.encrypted_api_key || '');
-        const apiSecret = atob(credentials.encrypted_api_secret || '');
+        // Decriptação corrigida - remover prefixo masterKey se existir
+        let apiKey = '';
+        let apiSecret = '';
+        
+        try {
+          const encryptedKey = credentials.encrypted_api_key || '';
+          const encryptedSecret = credentials.encrypted_api_secret || '';
+          
+          // Tentar decodificar base64 e remover prefixo masterKey:
+          const decodedKey = atob(encryptedKey);
+          const decodedSecret = atob(encryptedSecret);
+          
+          // Se contém ":", é formato masterKey:valor
+          if (decodedKey.includes(':')) {
+            apiKey = decodedKey.split(':').slice(1).join(':');
+          } else {
+            apiKey = decodedKey;
+          }
+          
+          if (decodedSecret.includes(':')) {
+            apiSecret = decodedSecret.split(':').slice(1).join(':');
+          } else {
+            apiSecret = decodedSecret;
+          }
+          
+          console.log(`[CLOSE-POSITION] Credenciais decriptadas com sucesso`);
+        } catch (decryptError) {
+          console.error(`[CLOSE-POSITION] Erro ao decriptar credenciais:`, decryptError);
+          throw new Error('Falha ao decriptar credenciais da Binance');
+        }
 
+        if (!apiKey || !apiSecret) {
+          throw new Error('Credenciais da Binance não encontradas ou inválidas');
+        }
+
+        // Preparar parâmetros para ordem FUTURES
         const timestamp = Date.now();
+        const symbol = position.asset.replace('/', ''); // BTCUSDT format
+        const side = position.direction === 'LONG' ? 'SELL' : 'BUY';
+        const quantityFormatted = quantity.toFixed(3); // 3 decimais para BTC
+        
         const params = new URLSearchParams({
-          symbol: position.asset,
-          side: position.direction === 'LONG' ? 'SELL' : 'BUY',
+          symbol: symbol,
+          side: side,
           type: 'MARKET',
-          quantity: quantity.toFixed(6),
+          quantity: quantityFormatted,
           timestamp: timestamp.toString(),
         });
 
-        const encoder = new TextEncoder();
-        const data = encoder.encode(params.toString() + apiSecret);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
+        // Criar assinatura HMAC-SHA256 correta
+        const signature = await createBinanceSignature(params.toString(), apiSecret);
         params.append('signature', signature);
 
-        const binanceResponse = await fetch(`https://api.binance.com/api/v3/order?${params}`, {
+        console.log(`[CLOSE-POSITION] Parâmetros da ordem FUTURES:`, {
+          symbol,
+          side,
+          quantity: quantityFormatted,
+          timestamp,
+        });
+
+        // Usar endpoint FUTURES correto
+        const binanceResponse = await fetch(`https://fapi.binance.com/fapi/v1/order?${params}`, {
           method: 'POST',
           headers: {
             'X-MBX-APIKEY': apiKey,
@@ -94,12 +156,19 @@ serve(async (req) => {
         const binanceData = await binanceResponse.json();
 
         if (binanceResponse.ok) {
-          binanceOrderId = binanceData.orderId;
-          console.log(`[CLOSE-POSITION] Ordem REAL fechada na Binance: ${binanceOrderId}`);
+          binanceOrderId = binanceData.orderId?.toString() || `FUTURES_${Date.now()}`;
+          console.log(`[CLOSE-POSITION] ✅ Ordem REAL fechada na Binance FUTURES: ${binanceOrderId}`);
         } else {
-          console.error(`[CLOSE-POSITION] Erro na Binance:`, binanceData);
+          console.error(`[CLOSE-POSITION] ❌ Erro na Binance FUTURES:`, binanceData);
+          console.error(`[CLOSE-POSITION] Status: ${binanceResponse.status}`);
+          console.error(`[CLOSE-POSITION] Detalhes: code=${binanceData.code}, msg=${binanceData.msg}`);
+          // Não lançar erro aqui para permitir atualização do banco mesmo se Binance falhar
         }
+      } else {
+        console.log(`[CLOSE-POSITION] Credenciais Binance não encontradas para usuário`);
       }
+    } else {
+      console.log(`[CLOSE-POSITION] Modo PAPER - Simulando fechamento`);
     }
 
     // 5. Deletar de active_positions
@@ -133,6 +202,8 @@ serve(async (req) => {
         .from('user_settings')
         .update({ balance: newBalance })
         .eq('user_id', position.user_id);
+      
+      console.log(`[CLOSE-POSITION] Balance atualizado: $${settings.balance.toFixed(2)} → $${newBalance.toFixed(2)}`);
     }
 
     // 8. Log
@@ -147,6 +218,7 @@ serve(async (req) => {
         pnl: finalPnL,
         result,
         binanceOrderId,
+        paperMode: settings?.paper_mode || true,
       },
     });
 
@@ -159,6 +231,7 @@ serve(async (req) => {
         exitPrice,
         pnl: finalPnL,
         result,
+        binanceOrderId,
         message: `Posição fechada com ${result}`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
