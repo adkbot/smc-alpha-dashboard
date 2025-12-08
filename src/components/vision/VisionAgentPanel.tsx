@@ -7,8 +7,8 @@ import { Slider } from "@/components/ui/slider";
 import { Play, Pause, Square, Loader2, Eye, Video, Youtube, Save, Check, ExternalLink, GraduationCap, BookOpen, Target, TrendingUp, Shield, AlertTriangle, RefreshCcw, Trash2 } from "lucide-react";
 import { useVisionAgentState } from "@/hooks/useVisionAgentState";
 import { Progress } from "@/components/ui/progress";
-import { useState, useEffect } from "react";
-import { VisionAgentAuth } from "./VisionAgentAuth";
+import { useState, useEffect, useCallback } from "react";
+import { VisionAgentAuth, verifyVisionAdminToken } from "./VisionAgentAuth";
 import { toast } from "@/hooks/use-toast";
 
 export const VisionAgentPanel = () => {
@@ -30,17 +30,24 @@ export const VisionAgentPanel = () => {
   } = useVisionAgentState();
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [playlistUrl, setPlaylistUrl] = useState("");
   const [confidenceThreshold, setConfidenceThreshold] = useState(70);
   const [maxTradesPerDay, setMaxTradesPerDay] = useState(10);
 
-  // Check authentication on mount (but don't block UI)
-  useEffect(() => {
-    const auth = sessionStorage.getItem("vision_admin_auth");
-    setIsAuthenticated(auth === "true");
+  // Verify token on mount via server-side validation
+  const verifyAuth = useCallback(async () => {
+    setIsVerifyingAuth(true);
+    const isValid = await verifyVisionAdminToken();
+    setIsAuthenticated(isValid);
+    setIsVerifyingAuth(false);
   }, []);
+
+  useEffect(() => {
+    verifyAuth();
+  }, [verifyAuth]);
 
   // Function to check auth before sensitive actions
   const requireAuth = (action: () => void) => {

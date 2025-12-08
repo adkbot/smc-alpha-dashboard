@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Lock, AlertCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface VisionAgentAuthProps {
   isOpen: boolean;
@@ -10,26 +11,47 @@ interface VisionAgentAuthProps {
   onClose?: () => void;
 }
 
+const SUPABASE_URL = "https://zfefnlibzgkfbgdtagho.supabase.co";
+
 export const VisionAgentAuth = ({ isOpen, onAuthenticated, onClose }: VisionAgentAuthProps) => {
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(false);
+    setError(null);
 
-    // Verificar senha admin
-    if (password === "28034050An") {
-      sessionStorage.setItem("vision_admin_auth", "true");
-      setPassword("");
-      onAuthenticated();
-    } else {
-      setError(true);
+    try {
+      // Validate password via Edge Function (server-side)
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/verify-vision-admin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'authenticate',
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.token) {
+        // Store the secure token (not a boolean!)
+        sessionStorage.setItem("vision_admin_token", data.token);
+        setPassword("");
+        onAuthenticated();
+      } else {
+        setError(data.error || "Senha incorreta. Tente novamente.");
+      }
+    } catch (err) {
+      console.error("Auth error:", err);
+      setError("Erro de conexão. Tente novamente.");
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
@@ -53,7 +75,7 @@ export const VisionAgentAuth = ({ isOpen, onAuthenticated, onClose }: VisionAgen
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
-                setError(false);
+                setError(null);
               }}
               className={error ? "border-destructive" : ""}
               autoFocus
@@ -61,7 +83,7 @@ export const VisionAgentAuth = ({ isOpen, onAuthenticated, onClose }: VisionAgen
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                <span>Senha incorreta. Tente novamente.</span>
+                <span>{error}</span>
               </div>
             )}
           </div>
@@ -73,4 +95,43 @@ export const VisionAgentAuth = ({ isOpen, onAuthenticated, onClose }: VisionAgen
       </DialogContent>
     </Dialog>
   );
+};
+
+// Helper function to verify token validity (can be used by other components)
+export const verifyVisionAdminToken = async (): Promise<boolean> => {
+  const token = sessionStorage.getItem("vision_admin_token");
+  
+  if (!token) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/verify-vision-admin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'verify',
+        token: token,
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (data.valid) {
+      return true;
+    } else {
+      // Token invalid or expired, clear it
+      sessionStorage.removeItem("vision_admin_token");
+      return false;
+    }
+  } catch {
+    return false;
+  }
+};
+
+// Helper to clear the admin session
+export const clearVisionAdminSession = () => {
+  sessionStorage.removeItem("vision_admin_token");
 };
