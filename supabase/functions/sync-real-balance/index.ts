@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Códigos de erro que indicam problema de credenciais (não devem atualizar saldo)
+const CREDENTIAL_ERROR_CODES = ['-2015', '-1022', '-2014', '-2008'];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -48,7 +51,8 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           error: 'No credentials found',
-          message: 'Please configure your API keys first.',
+          message: 'Configure suas credenciais API primeiro nas configurações.',
+          errorType: 'NO_CREDENTIALS'
         }),
         { 
           status: 404,
@@ -70,6 +74,9 @@ serve(async (req) => {
     let futuresBalance = 0;
     let totalBalance = 0;
     let balanceDetails: any = {};
+    let hasCredentialError = false;
+    let credentialErrorMessage = '';
+    let credentialErrorCode = '';
 
     if (broker_type === 'binance') {
       const timestamp = Date.now();
@@ -92,6 +99,22 @@ serve(async (req) => {
         return Array.from(new Uint8Array(signature))
           .map(b => b.toString(16).padStart(2, '0'))
           .join('');
+      };
+
+      // Helper to check if error is credential-related
+      const isCredentialError = (errorCode: string) => {
+        return CREDENTIAL_ERROR_CODES.includes(errorCode);
+      };
+
+      // Helper to get user-friendly error message
+      const getErrorMessage = (code: string, defaultMsg: string) => {
+        const messages: Record<string, string> = {
+          '-2015': 'API Key inválida ou expirada. Gere uma nova chave na Binance.',
+          '-1022': 'Assinatura inválida. Verifique o API Secret.',
+          '-2014': 'IP não autorizado. Remova a restrição de IP na Binance ou adicione o IP do servidor.',
+          '-2008': 'Permissões insuficientes. Habilite Futures na sua API Key.',
+        };
+        return messages[code] || defaultMsg;
       };
 
       // Fetch SPOT balance
@@ -118,9 +141,16 @@ serve(async (req) => {
               allAssets: spotData.balances?.filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
             };
           } else {
-            const errorText = await spotResponse.text();
-            console.error('❌ SPOT API Error:', spotResponse.status, errorText);
-            balanceDetails.spotError = errorText;
+            const errorData = await spotResponse.json();
+            const errorCode = errorData.code?.toString() || '';
+            console.error('❌ SPOT API Error:', spotResponse.status, JSON.stringify(errorData));
+            
+            if (isCredentialError(errorCode)) {
+              hasCredentialError = true;
+              credentialErrorCode = errorCode;
+              credentialErrorMessage = getErrorMessage(errorCode, errorData.msg);
+            }
+            balanceDetails.spotError = errorData.msg || 'Erro desconhecido';
           }
         } catch (error) {
           console.error('❌ SPOT fetch error:', error);
@@ -157,14 +187,50 @@ serve(async (req) => {
               allAssets: futuresData?.filter((b: any) => parseFloat(b.balance) > 0)
             };
           } else {
-            const errorText = await futuresResponse.text();
-            console.error('❌ FUTURES API Error:', futuresResponse.status, errorText);
-            balanceDetails.futuresError = errorText;
+            const errorData = await futuresResponse.json();
+            const errorCode = errorData.code?.toString() || '';
+            console.error('❌ FUTURES API Error:', futuresResponse.status, JSON.stringify(errorData));
+            
+            if (isCredentialError(errorCode)) {
+              hasCredentialError = true;
+              credentialErrorCode = errorCode;
+              credentialErrorMessage = getErrorMessage(errorCode, errorData.msg);
+            }
+            balanceDetails.futuresError = errorData.msg || 'Erro desconhecido';
           }
         } catch (error) {
           console.error('❌ FUTURES fetch error:', error);
           balanceDetails.futuresError = error instanceof Error ? error.message : 'Unknown error';
         }
+      }
+
+      // If we have a credential error, DO NOT update balance and mark credentials as failed
+      if (hasCredentialError) {
+        console.error('🚨 Credential error detected, NOT updating balance');
+        
+        // Update credential status to failed
+        await supabaseClient
+          .from('user_api_credentials')
+          .update({ 
+            test_status: 'failed',
+            last_tested_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id)
+          .eq('broker_type', broker_type);
+
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: credentialErrorMessage,
+            errorType: 'CREDENTIAL_ERROR',
+            errorCode: credentialErrorCode,
+            message: `Erro de credenciais: ${credentialErrorMessage}. Reconfigure suas API Keys nas configurações.`,
+          }),
+          { 
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
       }
 
       // Calculate total based on account type preference
@@ -187,7 +253,7 @@ serve(async (req) => {
       throw new Error('Forex balance sync not yet implemented for this broker');
     }
 
-    // Update user settings with new balance
+    // Only update if we have a valid response (no credential errors)
     const { error: updateError } = await supabaseClient
       .from('user_settings')
       .update({ balance: totalBalance })
@@ -208,7 +274,7 @@ serve(async (req) => {
         futuresBalance,
         accountType: account_type,
         details: balanceDetails,
-        message: `Balance synchronized: $${totalBalance.toFixed(2)} (SPOT: $${spotBalance.toFixed(2)}, FUTURES: $${futuresBalance.toFixed(2)})`,
+        message: `Saldo sincronizado: $${totalBalance.toFixed(2)} (SPOT: $${spotBalance.toFixed(2)}, FUTURES: $${futuresBalance.toFixed(2)})`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -217,8 +283,10 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: errorMessage,
-        message: 'Failed to synchronize balance',
+        errorType: 'UNKNOWN_ERROR',
+        message: 'Falha ao sincronizar saldo. Verifique suas configurações.',
       }),
       { 
         status: 500,

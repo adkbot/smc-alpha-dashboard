@@ -1,12 +1,14 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Wallet, Settings, RefreshCw, AlertTriangle, CheckCircle } from "lucide-react";
-import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, Wallet, Settings, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+
+type SyncStatus = "idle" | "syncing" | "success" | "error";
 
 export const AccountPanel = () => {
   const { user } = useAuth();
@@ -16,13 +18,14 @@ export const AccountPanel = () => {
   const [pnlPercent, setPnlPercent] = useState(0);
   const [paperMode, setPaperMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [syncingBalance, setSyncingBalance] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [binanceStatus, setBinanceStatus] = useState<"success" | "failed" | "pending">("pending");
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   const ensureUserSettings = async () => {
     if (!user) return null;
 
-    // Primeiro tenta buscar
     const { data: existingSettings } = await supabase
       .from("user_settings")
       .select("*")
@@ -31,7 +34,6 @@ export const AccountPanel = () => {
 
     if (existingSettings) return existingSettings;
 
-    // Se não existe, criar com UPSERT
     const { data: newSettings, error } = await supabase
       .from("user_settings")
       .upsert({
@@ -54,11 +56,10 @@ export const AccountPanel = () => {
     return newSettings;
   };
 
-  const fetchAccountData = async () => {
+  const fetchAccountData = useCallback(async () => {
     if (!user) return;
 
     try {
-      // 1. Garantir que user_settings existe
       const settings = await ensureUserSettings();
 
       if (settings) {
@@ -66,7 +67,6 @@ export const AccountPanel = () => {
         setPaperMode(settings.paper_mode ?? true);
       }
 
-      // 2. Buscar status das credenciais Binance
       const { data: credentials } = await supabase
         .from("user_api_credentials")
         .select("test_status")
@@ -78,7 +78,6 @@ export const AccountPanel = () => {
         setBinanceStatus(credentials.test_status as any || "pending");
       }
 
-      // 3. Buscar PnL das operações fechadas hoje
       const today = new Date().toISOString().split('T')[0];
       const { data: todayOps } = await supabase
         .from("operations")
@@ -89,7 +88,6 @@ export const AccountPanel = () => {
 
       const closedPnL = todayOps?.reduce((sum, op) => sum + (op.pnl || 0), 0) || 0;
 
-      // 4. Buscar PnL das posições abertas
       const { data: activePositions } = await supabase
         .from("active_positions")
         .select("current_pnl")
@@ -97,7 +95,6 @@ export const AccountPanel = () => {
 
       const activePnL = activePositions?.reduce((sum, pos) => sum + (pos.current_pnl || 0), 0) || 0;
 
-      // 5. Calcular PnL total e percentual
       const currentBalance = settings?.balance || 0;
       const totalPnL = closedPnL + activePnL;
       setPnl(totalPnL);
@@ -106,9 +103,9 @@ export const AccountPanel = () => {
     } catch (error) {
       console.error("Erro ao buscar dados da conta:", error);
     }
-  };
+  }, [user]);
 
-  const syncRealBalance = async () => {
+  const syncRealBalance = useCallback(async () => {
     if (paperMode) {
       toast({
         title: "Modo Paper ativo",
@@ -118,62 +115,119 @@ export const AccountPanel = () => {
       return;
     }
 
-    setSyncingBalance(true);
+    setSyncStatus("syncing");
+    setSyncError(null);
+
     try {
-      // Buscar da conta FUTURES por padrão (onde geralmente está o saldo de trading)
       const { data, error } = await supabase.functions.invoke("sync-real-balance", {
         body: { broker_type: "binance", account_type: "futures" },
       });
 
-      if (error) throw error;
+      // Handle function invocation error
+      if (error) {
+        throw new Error(error.message || "Erro de conexão com servidor");
+      }
 
+      // Check if response indicates an error
+      if (data?.errorType === 'CREDENTIAL_ERROR') {
+        setSyncStatus("error");
+        setSyncError(data.message);
+        setBinanceStatus("failed");
+        
+        toast({
+          title: "❌ Erro de Credenciais",
+          description: data.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (data?.success === false || data?.error) {
+        const errorMsg = data.message || data.error || "Falha ao sincronizar";
+        setSyncStatus("error");
+        setSyncError(errorMsg);
+        
+        toast({
+          title: "⚠️ Erro ao sincronizar",
+          description: errorMsg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Success case
       if (data?.success) {
         setBalance(data.balance);
+        setSyncStatus("success");
+        setSyncError(null);
+        setLastSyncTime(new Date());
+        
         const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
         const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
         const accountInfo = [spotInfo, futuresInfo].filter(Boolean).join(' | ');
         
         toast({
-          title: "Saldo Sincronizado",
+          title: "✅ Saldo Sincronizado",
           description: `Total: $${data.balance.toFixed(2)}${accountInfo ? ` (${accountInfo})` : ''}`,
         });
-      } else if (data?.error) {
-        throw new Error(data.error);
       }
     } catch (error: any) {
       console.error("Erro ao sincronizar saldo:", error);
+      setSyncStatus("error");
+      setSyncError(error.message || "Falha na conexão");
+      
       toast({
-        title: "Erro ao sincronizar",
-        description: error.message || "Falha ao sincronizar saldo da Binance",
+        title: "❌ Erro de conexão",
+        description: error.message || "Não foi possível conectar ao servidor",
         variant: "destructive",
       });
-    } finally {
-      setSyncingBalance(false);
     }
-  };
+  }, [paperMode, toast]);
+
+  const openSettings = () => setSettingsOpen(true);
 
   useEffect(() => {
     fetchAccountData();
-    
-    // Atualizar a cada 10 segundos
     const interval = setInterval(fetchAccountData, 10000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [fetchAccountData]);
 
-  // Auto-sync ao montar e periodicamente quando em modo REAL
+  // Auto-sync quando em modo REAL com credenciais válidas
   useEffect(() => {
     if (!paperMode && binanceStatus === "success" && user) {
-      // Sync imediato
       syncRealBalance();
       
-      // Auto-sync a cada 30 segundos em modo REAL
       const syncInterval = setInterval(() => {
         syncRealBalance();
       }, 30000);
       
       return () => clearInterval(syncInterval);
     }
-  }, [paperMode, binanceStatus, user]);
+  }, [paperMode, binanceStatus, user, syncRealBalance]);
+
+  // Reset sync status when switching to paper mode
+  useEffect(() => {
+    if (paperMode) {
+      setSyncStatus("idle");
+      setSyncError(null);
+    }
+  }, [paperMode]);
+
+  const getSyncIndicator = () => {
+    if (paperMode) return null;
+    
+    switch (syncStatus) {
+      case "syncing":
+        return <RefreshCw className="w-3 h-3 text-primary animate-spin" />;
+      case "success":
+        return <CheckCircle className="w-3 h-3 text-success" />;
+      case "error":
+        return <XCircle className="w-3 h-3 text-destructive" />;
+      default:
+        return binanceStatus === "success" ? 
+          <CheckCircle className="w-3 h-3 text-success" /> : null;
+    }
+  };
 
   return (
     <div className="p-4 border-b border-border bg-card/50">
@@ -191,17 +245,17 @@ export const AccountPanel = () => {
               variant="ghost" 
               className="h-7 w-7 p-0"
               onClick={syncRealBalance}
-              disabled={syncingBalance}
+              disabled={syncStatus === "syncing"}
               title="Sincronizar saldo da Binance"
             >
-              <RefreshCw className={`w-3 h-3 ${syncingBalance ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? 'animate-spin' : ''}`} />
             </Button>
           )}
           <Button 
             size="sm" 
             variant="ghost" 
             className="h-7"
-            onClick={() => setSettingsOpen(true)}
+            onClick={openSettings}
           >
             <Settings className="w-3 h-3" />
           </Button>
@@ -210,13 +264,49 @@ export const AccountPanel = () => {
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
 
+      {/* Erro de sincronização */}
+      {syncError && !paperMode && (
+        <div className="mb-3 p-2 bg-destructive/10 border border-destructive/30 rounded-md">
+          <div className="flex items-start gap-2">
+            <WifiOff className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs text-destructive font-medium">
+                Erro de sincronização
+              </p>
+              <p className="text-xs text-destructive/80 mt-0.5">
+                {syncError}
+              </p>
+            </div>
+          </div>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="w-full mt-2 h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+            onClick={openSettings}
+          >
+            <Settings className="w-3 h-3 mr-1" />
+            Verificar Configurações
+          </Button>
+        </div>
+      )}
+
       {/* Aviso se modo REAL sem credenciais validadas */}
-      {!paperMode && binanceStatus !== "success" && (
+      {!paperMode && binanceStatus !== "success" && !syncError && (
         <div className="mb-3 p-2 bg-destructive/10 border border-destructive/30 rounded-md flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
-          <p className="text-xs text-destructive">
-            Modo REAL sem conexão validada. Configure suas credenciais Binance.
-          </p>
+          <div className="flex-1">
+            <p className="text-xs text-destructive">
+              Modo REAL sem conexão validada. Configure suas credenciais Binance.
+            </p>
+            <Button 
+              size="sm" 
+              variant="link" 
+              className="h-auto p-0 text-xs text-destructive underline"
+              onClick={openSettings}
+            >
+              Configurar agora
+            </Button>
+          </div>
         </div>
       )}
 
@@ -225,9 +315,7 @@ export const AccountPanel = () => {
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-muted-foreground uppercase">Saldo Total</span>
           <div className="flex items-center gap-2">
-            {!paperMode && binanceStatus === "success" && (
-              <CheckCircle className="w-3 h-3 text-success" />
-            )}
+            {getSyncIndicator()}
             <Badge 
               variant={paperMode ? "outline" : "default"} 
               className={`text-xs ${!paperMode ? 'bg-success text-success-foreground' : ''}`}
@@ -252,6 +340,13 @@ export const AccountPanel = () => {
           </span>
           <span className="text-xs text-muted-foreground">hoje</span>
         </div>
+        
+        {/* Last sync time indicator */}
+        {!paperMode && lastSyncTime && syncStatus === "success" && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Última sync: {lastSyncTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
       </Card>
     </div>
   );
