@@ -78,11 +78,116 @@ async function setLeverage(apiKey: string, apiSecret: string, symbol: string, le
   }
 }
 
-// Constantes para BTCUSDT FUTURES
-const MIN_QUANTITY_BTC = 0.001; // Quantidade mínima para BTCUSDT
-const QUANTITY_PRECISION = 3;   // Casas decimais para quantidade
+// Constantes de margem (aplicável a todos os pares)
 const MARGIN_BUFFER = 0.85;     // 85% do saldo disponível (15% buffer para taxas/margem manutenção)
 const OPENING_FEE_RATE = 0.0004; // 0.04% taxa de abertura Binance Futures
+
+// Interface para regras de trading da Binance
+interface ExchangeInfo {
+  symbol: string;
+  minQty: number;
+  maxQty: number;
+  stepSize: number;
+  marketMinQty: number;
+  marketMaxQty: number;
+  minPrice: number;
+  maxPrice: number;
+  tickSize: number;
+  minNotional: number;
+  quantityPrecision: number;
+  pricePrecision: number;
+}
+
+// Buscar regras de trading da Binance FUTURES para o símbolo
+async function getExchangeInfo(symbol: string): Promise<ExchangeInfo> {
+  try {
+    console.log(`[EXCHANGE-INFO] Buscando regras para ${symbol}...`);
+    
+    const response = await fetch(`https://fapi.binance.com/fapi/v1/exchangeInfo?symbol=${symbol}`);
+    
+    if (!response.ok) {
+      throw new Error(`Falha ao buscar exchangeInfo: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const symbolInfo = data.symbols?.find((s: any) => s.symbol === symbol);
+    
+    if (!symbolInfo) {
+      throw new Error(`Símbolo ${symbol} não encontrado na Binance`);
+    }
+    
+    const filters = symbolInfo.filters || [];
+    
+    // Extrair LOT_SIZE (quantidade)
+    const lotSizeFilter = filters.find((f: any) => f.filterType === 'LOT_SIZE') || {};
+    const marketLotSizeFilter = filters.find((f: any) => f.filterType === 'MARKET_LOT_SIZE') || {};
+    
+    // Extrair PRICE_FILTER (preços)
+    const priceFilter = filters.find((f: any) => f.filterType === 'PRICE_FILTER') || {};
+    
+    // Extrair MIN_NOTIONAL (valor mínimo em USDT)
+    const minNotionalFilter = filters.find((f: any) => f.filterType === 'MIN_NOTIONAL') || {};
+    
+    const exchangeInfo: ExchangeInfo = {
+      symbol: symbolInfo.symbol,
+      minQty: parseFloat(lotSizeFilter.minQty || '0.001'),
+      maxQty: parseFloat(lotSizeFilter.maxQty || '1000'),
+      stepSize: parseFloat(lotSizeFilter.stepSize || '0.001'),
+      marketMinQty: parseFloat(marketLotSizeFilter.minQty || '0.001'),
+      marketMaxQty: parseFloat(marketLotSizeFilter.maxQty || '1000'),
+      minPrice: parseFloat(priceFilter.minPrice || '0.01'),
+      maxPrice: parseFloat(priceFilter.maxPrice || '1000000'),
+      tickSize: parseFloat(priceFilter.tickSize || '0.01'),
+      minNotional: parseFloat(minNotionalFilter.notional || '5'),
+      quantityPrecision: symbolInfo.quantityPrecision || 3,
+      pricePrecision: symbolInfo.pricePrecision || 2,
+    };
+    
+    console.log(`[EXCHANGE-INFO] ✅ Regras para ${symbol}:`);
+    console.log(`  - minQty: ${exchangeInfo.minQty}`);
+    console.log(`  - maxQty: ${exchangeInfo.maxQty}`);
+    console.log(`  - stepSize: ${exchangeInfo.stepSize}`);
+    console.log(`  - tickSize: ${exchangeInfo.tickSize}`);
+    console.log(`  - minNotional: $${exchangeInfo.minNotional}`);
+    console.log(`  - quantityPrecision: ${exchangeInfo.quantityPrecision}`);
+    console.log(`  - pricePrecision: ${exchangeInfo.pricePrecision}`);
+    
+    return exchangeInfo;
+  } catch (error) {
+    console.error(`[EXCHANGE-INFO] ❌ Erro:`, error);
+    
+    // Retornar valores padrão para BTCUSDT se falhar
+    console.log(`[EXCHANGE-INFO] Usando valores padrão para ${symbol}`);
+    return {
+      symbol,
+      minQty: 0.001,
+      maxQty: 1000,
+      stepSize: 0.001,
+      marketMinQty: 0.001,
+      marketMaxQty: 1000,
+      minPrice: 0.01,
+      maxPrice: 1000000,
+      tickSize: 0.10,
+      minNotional: 5,
+      quantityPrecision: 3,
+      pricePrecision: 2,
+    };
+  }
+}
+
+// Arredondar quantidade para stepSize (sempre arredonda para BAIXO para segurança)
+function roundToStepSize(quantity: number, stepSize: number, precision: number): number {
+  const factor = 1 / stepSize;
+  const rounded = Math.floor(quantity * factor) / factor;
+  return parseFloat(rounded.toFixed(precision));
+}
+
+// Arredondar preço para tickSize (arredonda para o tick mais próximo)
+function roundToTickSize(price: number, tickSize: number, precision: number): number {
+  const factor = 1 / tickSize;
+  const rounded = Math.round(price * factor) / factor;
+  return parseFloat(rounded.toFixed(precision));
+}
 
 // Função para buscar saldo real da Binance FUTURES
 async function getRealBinanceBalance(apiKey: string, apiSecret: string): Promise<number> {
@@ -246,7 +351,24 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 7. CÁLCULO CORRETO PARA USDT-M FUTURES
+    // 7. BUSCAR REGRAS DE TRADING DA BINANCE (exchangeInfo)
+    // ========================================
+    
+    const futuresSymbol = asset.toUpperCase();
+    const exchangeInfo = await getExchangeInfo(futuresSymbol);
+    
+    // Arredondar preços para tickSize
+    const validatedEntryPrice = roundToTickSize(entry_price, exchangeInfo.tickSize, exchangeInfo.pricePrecision);
+    const validatedStopLoss = roundToTickSize(stop_loss, exchangeInfo.tickSize, exchangeInfo.pricePrecision);
+    const validatedTakeProfit = roundToTickSize(take_profit, exchangeInfo.tickSize, exchangeInfo.pricePrecision);
+    
+    console.log(`[EXECUTE-ORDER] 💱 Preços validados (tickSize: ${exchangeInfo.tickSize}):`);
+    console.log(`  - Entry: ${entry_price} → ${validatedEntryPrice}`);
+    console.log(`  - SL: ${stop_loss} → ${validatedStopLoss}`);
+    console.log(`  - TP: ${take_profit} → ${validatedTakeProfit}`);
+
+    // ========================================
+    // 8. CÁLCULO CORRETO PARA USDT-M FUTURES
     // ========================================
     
     // Usar saldo REAL da Binance em modo real, senão usar saldo do banco
@@ -337,24 +459,45 @@ serve(async (req) => {
       console.log(`[EXECUTE-ORDER] Quantity máxima: ${quantityBTC.toFixed(6)} BTC`);
     }
     
-    // Formatar quantidade para Binance (3 casas decimais, mínimo 0.001)
-    quantityBTC = Math.floor(quantityBTC * Math.pow(10, QUANTITY_PRECISION)) / Math.pow(10, QUANTITY_PRECISION);
+    // ========================================
+    // 10. VALIDAR QUANTIDADE COM exchangeInfo
+    // ========================================
     
-    // Verificar quantidade mínima
-    if (quantityBTC < MIN_QUANTITY_BTC) {
-      console.log(`[EXECUTE-ORDER] ❌ Quantidade muito pequena: ${quantityBTC} BTC`);
-      throw new Error(`Quantidade muito pequena (${quantityBTC.toFixed(6)} BTC). Mínimo: ${MIN_QUANTITY_BTC} BTC. Aumente o saldo ou o risco por trade.`);
+    // Arredondar quantidade para stepSize
+    quantityBTC = roundToStepSize(quantityBTC, exchangeInfo.stepSize, exchangeInfo.quantityPrecision);
+    
+    // Verificar quantidade mínima (usar maior entre marketMinQty e minQty)
+    const effectiveMinQty = Math.max(exchangeInfo.minQty, exchangeInfo.marketMinQty);
+    
+    if (quantityBTC < effectiveMinQty) {
+      console.log(`[EXECUTE-ORDER] ❌ Quantidade muito pequena: ${quantityBTC} (min: ${effectiveMinQty})`);
+      throw new Error(`Quantidade muito pequena (${quantityBTC}). Mínimo: ${effectiveMinQty}. Aumente o saldo ou o risco por trade.`);
+    }
+    
+    // Verificar quantidade máxima
+    const effectiveMaxQty = Math.min(exchangeInfo.maxQty, exchangeInfo.marketMaxQty);
+    if (quantityBTC > effectiveMaxQty) {
+      console.log(`[EXECUTE-ORDER] ⚠️ Quantidade acima do máximo. Reduzindo de ${quantityBTC} para ${effectiveMaxQty}`);
+      quantityBTC = effectiveMaxQty;
+    }
+    
+    // Verificar minNotional (valor mínimo em USDT)
+    const calculatedNotional = quantityBTC * validatedEntryPrice;
+    if (calculatedNotional < exchangeInfo.minNotional) {
+      console.log(`[EXECUTE-ORDER] ❌ Nocional muito baixo: $${calculatedNotional.toFixed(2)} (min: $${exchangeInfo.minNotional})`);
+      throw new Error(`Valor nocional muito baixo ($${calculatedNotional.toFixed(2)}). Mínimo: $${exchangeInfo.minNotional}. Aumente o saldo ou o risco por trade.`);
     }
     
     // Calcular lucro/perda projetados com quantidade final
-    const finalNotional = quantityBTC * entry_price;
+    const finalNotional = quantityBTC * validatedEntryPrice;
     const finalMarginRequired = (finalNotional / leverage) + (finalNotional * OPENING_FEE_RATE);
-    const projectedProfit = quantityBTC * Math.abs(take_profit - entry_price);
+    const projectedProfit = quantityBTC * Math.abs(validatedTakeProfit - validatedEntryPrice);
     const projectedLoss = quantityBTC * stopDistanceUSDT;
     
     console.log(`[EXECUTE-ORDER] ==========================================`);
-    console.log(`[EXECUTE-ORDER] ✅ QUANTIDADE FINAL: ${quantityBTC.toFixed(QUANTITY_PRECISION)} BTC`);
-    console.log(`[EXECUTE-ORDER] Nocional final: $${finalNotional.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] ✅ VALIDAÇÃO COMPLETA COM exchangeInfo:`);
+    console.log(`[EXECUTE-ORDER] Quantity final: ${quantityBTC.toFixed(exchangeInfo.quantityPrecision)} (stepSize: ${exchangeInfo.stepSize})`);
+    console.log(`[EXECUTE-ORDER] Nocional final: $${finalNotional.toFixed(2)} USDT (min: $${exchangeInfo.minNotional})`);
     console.log(`[EXECUTE-ORDER] Margem final requerida: $${finalMarginRequired.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Margem disponível: $${availableMarginUSDT.toFixed(2)} USDT`);
     console.log(`[EXECUTE-ORDER] Perda máxima (SL): $${projectedLoss.toFixed(2)} USDT`);
@@ -362,8 +505,8 @@ serve(async (req) => {
     console.log(`[EXECUTE-ORDER] Ajustes realizados: ${adjustmentAttempts}`);
     console.log(`[EXECUTE-ORDER] ==========================================`);
 
-    // 9. Executar ordem (Paper Mode ou Real Mode)
-    let executedPrice = entry_price;
+    // 11. Executar ordem (Paper Mode ou Real Mode)
+    let executedPrice = validatedEntryPrice;
     let orderId = `PAPER_${Date.now()}`;
 
     if (!settings.paper_mode) {
@@ -371,8 +514,6 @@ serve(async (req) => {
       if (!apiKey || !apiSecret) {
         throw new Error('Credenciais da Binance não disponíveis');
       }
-
-      const futuresSymbol = asset.toUpperCase();
 
       // Configurar alavancagem na Binance antes de executar ordem
       console.log(`[EXECUTE-ORDER] Configurando alavancagem ${leverage}x na Binance...`);
@@ -382,7 +523,7 @@ serve(async (req) => {
 
       // Preparar parâmetros para FUTURES API
       const timestamp = Date.now();
-      const formattedQuantity = quantityBTC.toFixed(QUANTITY_PRECISION);
+      const formattedQuantity = quantityBTC.toFixed(exchangeInfo.quantityPrecision);
       
       const params = new URLSearchParams({
         symbol: futuresSymbol,
@@ -424,7 +565,7 @@ serve(async (req) => {
       console.log(`[EXECUTE-ORDER] 📝 Ordem PAPER simulada`);
     }
 
-    // 8. Registrar em active_positions
+    // 12. Registrar em active_positions (usar preços validados)
     const { data: position, error: positionError } = await supabase
       .from('active_positions')
       .insert({
@@ -433,8 +574,8 @@ serve(async (req) => {
         direction,
         entry_price: executedPrice,
         current_price: executedPrice,
-        stop_loss,
-        take_profit,
+        stop_loss: validatedStopLoss,
+        take_profit: validatedTakeProfit,
         risk_reward,
         projected_profit: projectedProfit,
         agents: signal_data,
@@ -447,7 +588,7 @@ serve(async (req) => {
       throw new Error(`Erro ao registrar posição: ${positionError.message}`);
     }
 
-    // 9. Registrar em operations
+    // 13. Registrar em operations (usar preços validados)
     const { error: operationError } = await supabase
       .from('operations')
       .insert({
@@ -456,8 +597,8 @@ serve(async (req) => {
         direction,
         entry_price: executedPrice,
         entry_time: new Date().toISOString(),
-        stop_loss,
-        take_profit,
+        stop_loss: validatedStopLoss,
+        take_profit: validatedTakeProfit,
         risk_reward,
         result: 'OPEN',
         strategy: 'TRADER_RAIZ_SMC',
