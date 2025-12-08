@@ -220,12 +220,18 @@ export const useMultiTimeframeAnalysis = (
 
         const { data: settings } = await supabase
           .from("user_settings")
-          .select("bot_status, paper_mode")
+          .select("bot_status, paper_mode, auto_trading_enabled")
           .eq("user_id", user.id)
           .single();
 
         if (settings?.bot_status !== "running") {
           console.log("[AUTO-EXECUTE] Bot não está running");
+          return;
+        }
+
+        // VERIFICAR AUTO TRADING HABILITADO
+        if (!settings?.auto_trading_enabled) {
+          console.log("[AUTO-EXECUTE] Auto Trading: OFF - NÃO EXECUTAR");
           return;
         }
 
