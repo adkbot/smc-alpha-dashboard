@@ -12,11 +12,31 @@ import { VisionAgentVideos } from "@/components/vision/VisionAgentVideos";
 import { VisionAgentStrategies } from "@/components/vision/VisionAgentStrategies";
 import { VisionAgentSignals } from "@/components/vision/VisionAgentSignals";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { PanelRight } from "lucide-react";
 
 const Dashboard = () => {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [interval, setInterval] = useState("15m");
   const { data: mtfData } = useMultiTimeframeAnalysis(symbol, interval);
+  const isMobile = useIsMobile();
+
+  const SidebarContent = () => (
+    <div className="h-full overflow-y-auto pb-4 space-y-2">
+      <BotControlPanel />
+      <VisionAgentPanel />
+      <VisionAgentStrategies />
+      <VisionAgentSignals />
+      <ActivePositionsPanel />
+      <AccountPanel />
+      <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
+      <VisionAgentLogs />
+      <VisionAgentVideos />
+      <TradingLogsPanel />
+    </div>
+  );
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -34,22 +54,36 @@ const Dashboard = () => {
             interval={interval}
             smcData={mtfData}
           />
+          
+          {/* Mobile: Floating button to open sidebar */}
+          {isMobile && (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button 
+                  size="lg"
+                  className="fixed bottom-4 right-4 z-50 h-14 w-14 rounded-full shadow-lg"
+                >
+                  <PanelRight className="h-6 w-6" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[90vw] max-w-md p-0 overflow-hidden">
+                <SheetHeader className="p-4 border-b border-border">
+                  <SheetTitle>Painel de Controle</SheetTitle>
+                </SheetHeader>
+                <div className="h-[calc(100vh-60px)] overflow-y-auto p-2">
+                  <SidebarContent />
+                </div>
+              </SheetContent>
+            </Sheet>
+          )}
         </div>
         
-        <div className="w-96 flex flex-col border-l border-border">
-          <div className="h-full overflow-y-auto pb-4 space-y-2">
-            <BotControlPanel />
-            <VisionAgentPanel />
-            <VisionAgentStrategies />
-            <VisionAgentSignals />
-            <ActivePositionsPanel />
-            <AccountPanel />
-            <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
-            <VisionAgentLogs />
-            <VisionAgentVideos />
-            <TradingLogsPanel />
+        {/* Desktop: Fixed sidebar */}
+        {!isMobile && (
+          <div className="w-96 flex flex-col border-l border-border">
+            <SidebarContent />
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
