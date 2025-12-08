@@ -154,7 +154,7 @@ const Auth = () => {
     setLoading(true);
 
     const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
-      redirectTo: `${window.location.origin}/auth?type=recovery`,
+      redirectTo: 'https://smcpro.netlify.app/auth?type=recovery',
     });
 
     if (error) {
