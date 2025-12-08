@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MTFAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -42,110 +42,133 @@ export const TradingChartOverlay = ({ smcData }: TradingChartOverlayProps) => {
     (currentData.manipulationZones?.length || 0);
 
   return (
-    <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
-      {/* Botão Toggle */}
-      <Button
-        onClick={() => setIsVisible(!isVisible)}
-        variant="secondary"
-        size="sm"
-        className="gap-2 shadow-lg"
-      >
-        {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        <span className="font-semibold">SMC</span>
-        <Badge variant={totalStructures > 0 ? "default" : "secondary"}>
-          {totalStructures}
-        </Badge>
-      </Button>
-
-      {/* Painel de Estruturas */}
-      {isVisible && hasStructures && (
-        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg max-w-xs transition-all duration-300 animate-scale-in">
-      <div className="space-y-2 text-xs font-mono">
-        <div className="flex items-center gap-2 pb-2 border-b border-border">
-          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          <span className="font-bold text-foreground">ESTRUTURAS SMC ATIVAS</span>
-        </div>
-
-        {currentData.fvgs && currentData.fvgs.length > 0 && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">📊 FVGs:</span>
-              <span className="font-bold text-foreground">{currentData.fvgs.length}</span>
-            </div>
-            {currentData.fvgs.slice(0, 3).map((fvg, i) => (
-              <div key={i} className="pl-4 flex items-center gap-2">
-                <div className={`w-1.5 h-1.5 rounded-full ${fvg.type === 'bullish' ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className={fvg.type === 'bullish' ? 'text-green-500' : 'text-red-500'}>
-                  {fvg.type === 'bullish' ? '↑' : '↓'} {fvg.top.toFixed(2)} - {fvg.bottom.toFixed(2)}
-                </span>
-                {fvg.isFilled && <span className="text-muted-foreground text-[10px]">(FILLED)</span>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {currentData.orderBlocks && currentData.orderBlocks.length > 0 && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">📦 Order Blocks:</span>
-              <span className="font-bold text-foreground">{currentData.orderBlocks.length}</span>
-            </div>
-            {currentData.orderBlocks.slice(0, 3).map((ob, i) => (
-              <div key={i} className="pl-4 flex items-center gap-2">
-                <div className={`w-1.5 h-1.5 rounded-full ${ob.type === 'bullish' ? 'bg-blue-500' : 'bg-orange-500'}`} />
-                <span className={ob.type === 'bullish' ? 'text-blue-500' : 'text-orange-500'}>
-                  {ob.type === 'bullish' ? '↑' : '↓'} {ob.strength}% strength
-                </span>
-                {ob.confirmed && <span className="text-green-500 text-[10px]">✓</span>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {currentData.pois && currentData.pois.length > 0 && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">🎯 POIs:</span>
-              <span className="font-bold text-primary">{currentData.pois.length}</span>
-            </div>
-            {currentData.pois.slice(0, 2).map((poi, i) => (
-              <div key={poi.id} className="pl-4 space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${poi.type === 'bullish' ? 'bg-purple-500' : 'bg-pink-500'}`} />
-                  <span className={poi.type === 'bullish' ? 'text-purple-500' : 'text-pink-500'}>
-                    {poi.type === 'bullish' ? 'LONG' : 'SHORT'} • {poi.confluenceScore}% • RR:{poi.riskReward.toFixed(1)}
-                  </span>
-                </div>
-                <div className="pl-4 text-[10px] text-muted-foreground">
-                  Entry: {poi.entry.toFixed(2)} | SL: {poi.stopLoss.toFixed(2)} | TP: {poi.takeProfit.toFixed(2)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {currentData.manipulationZones && currentData.manipulationZones.length > 0 && (
-          <div className="space-y-1 pt-1 border-t border-border/50">
-            <div className="flex items-center gap-2">
-              <span className="text-amber-500">⚠️</span>
-              <span className="text-amber-500 font-bold">
-                {currentData.manipulationZones.length} Zona{currentData.manipulationZones.length > 1 ? 's' : ''} de Manipulação
-              </span>
-            </div>
-            {currentData.manipulationZones.slice(0, 2).map((zone, i) => (
-              <div key={i} className="pl-4 text-amber-500/80 text-[10px]">
-                {zone.type.replace('_', ' ').toUpperCase()} @ {zone.price.toFixed(2)}
-              </div>
-            ))}
-          </div>
-        )}
-
-          <div className="pt-2 border-t border-border/50 text-[10px] text-muted-foreground text-center">
-            Atualizado em tempo real
-          </div>
-        </div>
-        </div>
+    <>
+      {/* Backdrop clicável para fechar no mobile */}
+      {isVisible && (
+        <div 
+          className="absolute inset-0 z-5 bg-black/20 md:bg-transparent"
+          onClick={() => setIsVisible(false)}
+          aria-hidden="true"
+        />
       )}
-    </div>
+      
+      <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+        {/* Botão Toggle - área de toque maior para mobile */}
+        <Button
+          onClick={() => setIsVisible(!isVisible)}
+          variant="secondary"
+          size="sm"
+          className="gap-2 shadow-lg min-h-[44px] min-w-[44px] touch-manipulation"
+        >
+          {isVisible ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+          <span className="font-semibold hidden sm:inline">SMC</span>
+          <Badge variant={totalStructures > 0 ? "default" : "secondary"}>
+            {totalStructures}
+          </Badge>
+        </Button>
+
+        {/* Painel de Estruturas */}
+        {isVisible && hasStructures && (
+          <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg w-[280px] sm:max-w-xs transition-all duration-300 animate-scale-in">
+            {/* Header com botão X visível */}
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span className="font-bold text-foreground text-xs">ESTRUTURAS SMC ATIVAS</span>
+              </div>
+              <Button
+                onClick={() => setIsVisible(false)}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 min-h-[44px] min-w-[44px] -mr-1 touch-manipulation hover:bg-destructive/10"
+                aria-label="Fechar painel"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            <div className="space-y-2 text-xs font-mono mt-2">
+              {currentData.fvgs && currentData.fvgs.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">📊 FVGs:</span>
+                    <span className="font-bold text-foreground">{currentData.fvgs.length}</span>
+                  </div>
+                  {currentData.fvgs.slice(0, 3).map((fvg, i) => (
+                    <div key={i} className="pl-4 flex items-center gap-2">
+                      <div className={`w-1.5 h-1.5 rounded-full ${fvg.type === 'bullish' ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <span className={fvg.type === 'bullish' ? 'text-green-500' : 'text-red-500'}>
+                        {fvg.type === 'bullish' ? '↑' : '↓'} {fvg.top.toFixed(2)} - {fvg.bottom.toFixed(2)}
+                      </span>
+                      {fvg.isFilled && <span className="text-muted-foreground text-[10px]">(FILLED)</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {currentData.orderBlocks && currentData.orderBlocks.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">📦 Order Blocks:</span>
+                    <span className="font-bold text-foreground">{currentData.orderBlocks.length}</span>
+                  </div>
+                  {currentData.orderBlocks.slice(0, 3).map((ob, i) => (
+                    <div key={i} className="pl-4 flex items-center gap-2">
+                      <div className={`w-1.5 h-1.5 rounded-full ${ob.type === 'bullish' ? 'bg-blue-500' : 'bg-orange-500'}`} />
+                      <span className={ob.type === 'bullish' ? 'text-blue-500' : 'text-orange-500'}>
+                        {ob.type === 'bullish' ? '↑' : '↓'} {ob.strength}% strength
+                      </span>
+                      {ob.confirmed && <span className="text-green-500 text-[10px]">✓</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {currentData.pois && currentData.pois.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">🎯 POIs:</span>
+                    <span className="font-bold text-primary">{currentData.pois.length}</span>
+                  </div>
+                  {currentData.pois.slice(0, 2).map((poi, i) => (
+                    <div key={poi.id} className="pl-4 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${poi.type === 'bullish' ? 'bg-purple-500' : 'bg-pink-500'}`} />
+                        <span className={poi.type === 'bullish' ? 'text-purple-500' : 'text-pink-500'}>
+                          {poi.type === 'bullish' ? 'LONG' : 'SHORT'} • {poi.confluenceScore}% • RR:{poi.riskReward.toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="pl-4 text-[10px] text-muted-foreground">
+                        Entry: {poi.entry.toFixed(2)} | SL: {poi.stopLoss.toFixed(2)} | TP: {poi.takeProfit.toFixed(2)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {currentData.manipulationZones && currentData.manipulationZones.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-border/50">
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-500">⚠️</span>
+                    <span className="text-amber-500 font-bold">
+                      {currentData.manipulationZones.length} Zona{currentData.manipulationZones.length > 1 ? 's' : ''} de Manipulação
+                    </span>
+                  </div>
+                  {currentData.manipulationZones.slice(0, 2).map((zone, i) => (
+                    <div key={i} className="pl-4 text-amber-500/80 text-[10px]">
+                      {zone.type.replace('_', ' ').toUpperCase()} @ {zone.price.toFixed(2)}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-border/50 text-[10px] text-muted-foreground text-center">
+                Atualizado em tempo real
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 };
