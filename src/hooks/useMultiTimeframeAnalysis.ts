@@ -250,44 +250,56 @@ export const useMultiTimeframeAnalysis = (
         console.log(`   R:R: 1:${riskReward.toFixed(2)}`);
         console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
 
-        const { data: orderResult, error } = await supabase.functions.invoke("execute-order", {
-          body: {
-            asset: symbol,
-            direction,
-            entry_price: entry,
-            stop_loss: stopLoss,
-            take_profit: takeProfit,
-            risk_reward: riskReward,
-            signal_data: {
-              ...data.currentTimeframe,
-              poi: bestPOI,
+        try {
+          const { data: orderResult, error } = await supabase.functions.invoke("execute-order", {
+            body: {
+              asset: symbol,
+              direction,
+              entry_price: entry,
+              stop_loss: stopLoss,
+              take_profit: takeProfit,
+              risk_reward: riskReward,
+              signal_data: {
+                ...data.currentTimeframe,
+                poi: bestPOI,
+              },
+              checklist: checklist,
             },
-            checklist: checklist,
-          },
-        });
-
-        // Check for both network errors and API errors (400 responses)
-        const apiError = error || orderResult?.error;
-        
-        if (apiError) {
-          const errorMessage = typeof apiError === 'string' ? apiError : apiError.message || 'Erro desconhecido';
-          console.error("[AUTO-EXECUTE] Erro ao executar ordem:", errorMessage);
-          toast({
-            title: "⚠️ Ordem não executada",
-            description: errorMessage,
-            variant: "destructive",
           });
-        } else if (orderResult?.success) {
-          // Marcar como executado
-          lastExecutedSignalRef.current = signalId;
+
+          // Check for network errors, API errors (400 responses), or error in response body
+          const apiError = error || orderResult?.error;
           
+          if (apiError) {
+            const errorMessage = typeof apiError === 'string' ? apiError : (apiError?.message || JSON.stringify(apiError));
+            console.warn("[AUTO-EXECUTE] Ordem bloqueada:", errorMessage);
+            toast({
+              title: "⚠️ Ordem não executada",
+              description: errorMessage,
+              variant: "destructive",
+            });
+            return; // Exit gracefully without crashing
+          } 
+          
+          if (orderResult?.success) {
+            // Marcar como executado
+            lastExecutedSignalRef.current = signalId;
+            
+            toast({
+              title: `✅ Ordem ${direction} executada`,
+              description: `${symbol} @ $${entry.toFixed(2)} | R:R 1:${riskReward.toFixed(2)} | ${settings.paper_mode ? 'PAPER' : 'REAL'}`,
+            });
+          }
+        } catch (invokeError) {
+          console.error("[AUTO-EXECUTE] Erro na chamada:", invokeError);
           toast({
-            title: `✅ Ordem ${direction} executada`,
-            description: `${symbol} @ $${entry.toFixed(2)} | R:R 1:${riskReward.toFixed(2)} | ${settings.paper_mode ? 'PAPER' : 'REAL'}`,
+            title: "⚠️ Erro de conexão",
+            description: "Não foi possível comunicar com o servidor",
+            variant: "destructive",
           });
         }
       } catch (error) {
-        console.error("[AUTO-EXECUTE] Erro:", error);
+        console.error("[AUTO-EXECUTE] Erro geral:", error);
       }
     };
 
