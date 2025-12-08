@@ -45,6 +45,43 @@ async function createBinanceSignature(queryString: string, apiSecret: string): P
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Função para configurar alavancagem na Binance
+async function setLeverage(apiKey: string, apiSecret: string, symbol: string, leverage: number): Promise<boolean> {
+  try {
+    const timestamp = Date.now();
+    const params = new URLSearchParams({
+      symbol: symbol,
+      leverage: leverage.toString(),
+      timestamp: timestamp.toString(),
+    });
+    
+    const signature = await createBinanceSignature(params.toString(), apiSecret);
+    params.append('signature', signature);
+    
+    const response = await fetch(`https://fapi.binance.com/fapi/v1/leverage?${params}`, {
+      method: 'POST',
+      headers: { 'X-MBX-APIKEY': apiKey },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.log(`[LEVERAGE] ⚠️ Erro ao configurar alavancagem: ${data.msg}`);
+      return false;
+    }
+    
+    console.log(`[LEVERAGE] ✅ Alavancagem configurada: ${data.leverage}x para ${symbol}`);
+    return true;
+  } catch (error) {
+    console.error('[LEVERAGE] Erro:', error);
+    return false;
+  }
+}
+
+// Constantes para BTCUSDT FUTURES
+const MIN_QUANTITY_BTC = 0.001; // Quantidade mínima para BTCUSDT
+const QUANTITY_PRECISION = 3;   // Casas decimais para quantidade
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -66,7 +103,10 @@ serve(async (req) => {
 
     const { asset, direction, entry_price, stop_loss, take_profit, risk_reward, signal_data, checklist } = await req.json();
 
-    console.log(`[EXECUTE-ORDER] Processando ordem para ${user.id}: ${direction} ${asset}`);
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] Processando ordem para ${user.id}`);
+    console.log(`[EXECUTE-ORDER] ${direction} ${asset} @ ${entry_price}`);
+    console.log(`[EXECUTE-ORDER] SL: ${stop_loss} | TP: ${take_profit} | R:R: 1:${risk_reward}`);
 
     // VALIDAR CHECKLIST TRADER RAIZ (8 CRITÉRIOS)
     if (checklist) {
@@ -120,8 +160,8 @@ serve(async (req) => {
     }
 
     // 4. Validar saldo mínimo
-    if (settings.balance < 100) {
-      throw new Error('Saldo insuficiente para operar (mínimo $100)');
+    if (settings.balance < 10) {
+      throw new Error('Saldo insuficiente para operar (mínimo $10)');
     }
 
     // 5. Validar R:R mínimo de 3:1 (Metodologia Trader Raiz)
@@ -130,16 +170,79 @@ serve(async (req) => {
       throw new Error(`R:R muito baixo (1:${risk_reward.toFixed(2)}). Mínimo Trader Raiz: 1:3.0`);
     }
 
-    // 6. Calcular tamanho da posição
-    // risk_per_trade já está em decimal (ex: 0.06 = 6%)
-    const riskPercentage = settings.risk_per_trade < 1 ? settings.risk_per_trade : settings.risk_per_trade / 100;
-    const riskAmount = settings.balance * riskPercentage;
-    const stopDistance = Math.abs(entry_price - stop_loss);
-    const quantity = (riskAmount / stopDistance) * settings.leverage;
-    const projectedProfit = quantity * Math.abs(take_profit - entry_price);
-
-    console.log(`[EXECUTE-ORDER] Risco: ${riskPercentage * 100}% = $${riskAmount.toFixed(2)}`);
-    console.log(`[EXECUTE-ORDER] Quantidade calculada: ${quantity.toFixed(6)} | Lucro projetado: $${projectedProfit.toFixed(2)}`);
+    // ========================================
+    // 6. CÁLCULO CORRETO PARA USDT-M FUTURES
+    // ========================================
+    
+    const balanceUSDT = settings.balance;
+    const leverage = settings.leverage || 20;
+    
+    // risk_per_trade já está em decimal (ex: 0.10 = 10%)
+    const riskPercentage = settings.risk_per_trade < 1 
+      ? settings.risk_per_trade 
+      : settings.risk_per_trade / 100;
+    
+    // Risco em USDT
+    const riskAmountUSDT = balanceUSDT * riskPercentage;
+    
+    // Distância do Stop Loss em USDT (valor absoluto)
+    const stopDistanceUSDT = Math.abs(entry_price - stop_loss);
+    
+    // FÓRMULA CORRETA: Quantity = Risco USDT / Distância SL USDT
+    // Isso garante que se o SL for atingido, a perda será exatamente o riskAmount
+    let quantityBTC = riskAmountUSDT / stopDistanceUSDT;
+    
+    // Calcular valores para verificação de margem
+    const notionalValueUSDT = quantityBTC * entry_price;
+    const requiredMarginUSDT = notionalValueUSDT / leverage;
+    const availableMarginUSDT = balanceUSDT * 0.95; // 95% do saldo disponível
+    
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] 📊 CÁLCULO DE POSIÇÃO USDT-M FUTURES:`);
+    console.log(`[EXECUTE-ORDER] Saldo: $${balanceUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Risco: ${(riskPercentage * 100).toFixed(1)}% = $${riskAmountUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Entry: $${entry_price} | SL: $${stop_loss}`);
+    console.log(`[EXECUTE-ORDER] Distância SL: $${stopDistanceUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Quantity inicial: ${quantityBTC.toFixed(6)} BTC`);
+    console.log(`[EXECUTE-ORDER] Nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem requerida: $${requiredMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem disponível (95%): $${availableMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Alavancagem: ${leverage}x`);
+    
+    // Verificar se margem é suficiente
+    if (requiredMarginUSDT > availableMarginUSDT) {
+      console.log(`[EXECUTE-ORDER] ⚠️ Margem insuficiente! Ajustando quantidade...`);
+      
+      // Calcular quantidade máxima que cabe na margem
+      const maxNotionalUSDT = availableMarginUSDT * leverage;
+      quantityBTC = maxNotionalUSDT / entry_price;
+      
+      const newNotional = quantityBTC * entry_price;
+      const newMarginRequired = newNotional / leverage;
+      
+      console.log(`[EXECUTE-ORDER] Nova quantity: ${quantityBTC.toFixed(6)} BTC`);
+      console.log(`[EXECUTE-ORDER] Novo nocional: $${newNotional.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Nova margem: $${newMarginRequired.toFixed(2)} USDT`);
+    }
+    
+    // Formatar quantidade para Binance (3 casas decimais, mínimo 0.001)
+    quantityBTC = Math.floor(quantityBTC * Math.pow(10, QUANTITY_PRECISION)) / Math.pow(10, QUANTITY_PRECISION);
+    
+    // Verificar quantidade mínima
+    if (quantityBTC < MIN_QUANTITY_BTC) {
+      console.log(`[EXECUTE-ORDER] ❌ Quantidade muito pequena: ${quantityBTC} BTC`);
+      throw new Error(`Quantidade muito pequena (${quantityBTC.toFixed(6)} BTC). Mínimo: ${MIN_QUANTITY_BTC} BTC. Aumente o saldo ou o risco por trade.`);
+    }
+    
+    // Calcular lucro/perda projetados
+    const projectedProfit = quantityBTC * Math.abs(take_profit - entry_price);
+    const projectedLoss = quantityBTC * stopDistanceUSDT;
+    
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] ✅ QUANTIDADE FINAL: ${quantityBTC.toFixed(QUANTITY_PRECISION)} BTC`);
+    console.log(`[EXECUTE-ORDER] Perda máxima (SL): $${projectedLoss.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Lucro projetado (TP): $${projectedProfit.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] ==========================================`);
 
     // 7. Executar ordem (Paper Mode ou Real Mode)
     let executedPrice = entry_price;
@@ -159,21 +262,22 @@ serve(async (req) => {
         throw new Error('Credenciais da Binance não configuradas');
       }
 
-      // Decrypt credentials usando o mesmo método de sync-real-balance
+      // Decrypt credentials
       const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
       const apiKey = atob(credentials.encrypted_api_key).replace(`${masterKey}:`, '');
       const apiSecret = atob(credentials.encrypted_api_secret).replace(`${masterKey}:`, '');
+
+      const futuresSymbol = asset.toUpperCase();
+
+      // Configurar alavancagem na Binance antes de executar ordem
+      console.log(`[EXECUTE-ORDER] Configurando alavancagem ${leverage}x na Binance...`);
+      await setLeverage(apiKey, apiSecret, futuresSymbol, leverage);
 
       console.log(`[EXECUTE-ORDER] Executando ordem REAL na Binance FUTURES...`);
 
       // Preparar parâmetros para FUTURES API
       const timestamp = Date.now();
-      
-      // Formatar símbolo para futures (remover possível sufixo se necessário)
-      const futuresSymbol = asset.toUpperCase();
-      
-      // Calcular quantidade com precisão adequada para BTC (3 casas decimais)
-      const formattedQuantity = quantity.toFixed(3);
+      const formattedQuantity = quantityBTC.toFixed(QUANTITY_PRECISION);
       
       const params = new URLSearchParams({
         symbol: futuresSymbol,
@@ -183,14 +287,14 @@ serve(async (req) => {
         timestamp: timestamp.toString(),
       });
 
-      // Criar assinatura HMAC-SHA256 correta
+      // Criar assinatura HMAC-SHA256
       const signature = await createBinanceSignature(params.toString(), apiSecret);
       params.append('signature', signature);
 
       console.log(`[EXECUTE-ORDER] Endpoint: fapi.binance.com/fapi/v1/order`);
-      console.log(`[EXECUTE-ORDER] Params: ${params.toString().replace(signature, 'SIG_HIDDEN')}`);
+      console.log(`[EXECUTE-ORDER] Symbol: ${futuresSymbol} | Side: ${direction === 'LONG' ? 'BUY' : 'SELL'} | Qty: ${formattedQuantity}`);
 
-      // Usar FUTURES endpoint (fapi) em vez de SPOT (api)
+      // Usar FUTURES endpoint (fapi)
       const binanceResponse = await fetch(`https://fapi.binance.com/fapi/v1/order?${params}`, {
         method: 'POST',
         headers: {
@@ -201,16 +305,18 @@ serve(async (req) => {
       const binanceData = await binanceResponse.json();
 
       if (!binanceResponse.ok) {
-        console.error('[EXECUTE-ORDER] Binance error:', binanceData);
+        console.error('[EXECUTE-ORDER] ❌ Binance error:', JSON.stringify(binanceData));
         throw new Error(`Binance error: ${binanceData.msg || JSON.stringify(binanceData)}`);
       }
 
       orderId = binanceData.orderId?.toString() || `REAL_${Date.now()}`;
       executedPrice = parseFloat(binanceData.avgPrice || binanceData.price || entry_price);
 
-      console.log(`[EXECUTE-ORDER] ✅ Ordem REAL executada na Binance FUTURES: ${orderId}`);
+      console.log(`[EXECUTE-ORDER] ✅ Ordem REAL executada na Binance FUTURES!`);
+      console.log(`[EXECUTE-ORDER] Order ID: ${orderId}`);
+      console.log(`[EXECUTE-ORDER] Preço executado: $${executedPrice}`);
     } else {
-      console.log(`[EXECUTE-ORDER] Ordem PAPER simulada`);
+      console.log(`[EXECUTE-ORDER] 📝 Ordem PAPER simulada`);
     }
 
     // 8. Registrar em active_positions
@@ -258,7 +364,7 @@ serve(async (req) => {
       console.error('[EXECUTE-ORDER] Erro ao registrar operação:', operationError);
     }
 
-    // 10. Log de execução
+    // 10. Log de execução detalhado
     await supabase.from('agent_logs').insert({
       user_id: user.id,
       agent_name: 'TRADER_RAIZ_EXECUTOR',
@@ -267,15 +373,25 @@ serve(async (req) => {
       data: {
         orderId,
         executedPrice,
-        quantity: parseFloat(quantity.toFixed(6)),
+        quantity: quantityBTC,
         direction,
         paperMode: settings.paper_mode,
         riskReward: risk_reward,
+        calculation: {
+          balanceUSDT,
+          riskPercentage: riskPercentage * 100,
+          riskAmountUSDT,
+          stopDistanceUSDT,
+          leverage,
+          projectedLoss,
+          projectedProfit,
+        },
         checklist: checklist || null,
       },
     });
 
     console.log(`[EXECUTE-ORDER] ✅ Ordem executada com sucesso: ${position.id}`);
+    console.log(`[EXECUTE-ORDER] ==========================================`);
 
     return new Response(
       JSON.stringify({
@@ -283,7 +399,9 @@ serve(async (req) => {
         positionId: position.id,
         orderId,
         executedPrice,
-        quantity: parseFloat(quantity.toFixed(6)),
+        quantity: quantityBTC,
+        projectedProfit,
+        projectedLoss,
         message: `Ordem ${direction} executada em ${asset}`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
