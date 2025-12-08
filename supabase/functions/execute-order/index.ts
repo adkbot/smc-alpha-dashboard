@@ -396,8 +396,10 @@ serve(async (req) => {
     // 🛡️ PROTEÇÃO DE MARGEM MÁXIMA (baseada na % configurada pelo usuário)
     // ========================================
     
-    // Margem MÁXIMA permitida = mesma % do risco configurado pelo usuário
-    const maxMarginAllowedUSDT = balanceUSDT * riskPercentage;
+    // CORREÇÃO: Usar saldo LOCAL (configurado pelo usuário) para calcular margem máxima
+    // Isso garante que cada trade use no MÁXIMO X% do capital configurado
+    const localBalance = settings.balance; // Saldo LOCAL ($151.81)
+    const maxMarginAllowedUSDT = localBalance * riskPercentage; // 10% de $151.81 = $15.18
     
     console.log(`[EXECUTE-ORDER] ==========================================`);
     console.log(`[EXECUTE-ORDER] 🛡️ PROTEÇÃO DE MARGEM MÁXIMA ATIVA:`);
