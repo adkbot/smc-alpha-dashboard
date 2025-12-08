@@ -250,7 +250,7 @@ export const useMultiTimeframeAnalysis = (
         console.log(`   R:R: 1:${riskReward.toFixed(2)}`);
         console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
 
-        const { error } = await supabase.functions.invoke("execute-order", {
+        const { data: orderResult, error } = await supabase.functions.invoke("execute-order", {
           body: {
             asset: symbol,
             direction,
@@ -266,14 +266,18 @@ export const useMultiTimeframeAnalysis = (
           },
         });
 
-        if (error) {
-          console.error("[AUTO-EXECUTE] Erro ao executar ordem:", error);
+        // Check for both network errors and API errors (400 responses)
+        const apiError = error || orderResult?.error;
+        
+        if (apiError) {
+          const errorMessage = typeof apiError === 'string' ? apiError : apiError.message || 'Erro desconhecido';
+          console.error("[AUTO-EXECUTE] Erro ao executar ordem:", errorMessage);
           toast({
-            title: "❌ Erro ao executar ordem",
-            description: error.message,
+            title: "⚠️ Ordem não executada",
+            description: errorMessage,
             variant: "destructive",
           });
-        } else {
+        } else if (orderResult?.success) {
           // Marcar como executado
           lastExecutedSignalRef.current = signalId;
           
