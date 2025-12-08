@@ -250,8 +250,11 @@ export const useMultiTimeframeAnalysis = (
         console.log(`   R:R: 1:${riskReward.toFixed(2)}`);
         console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
 
+        let orderResult: any = null;
+        let error: any = null;
+        
         try {
-          const { data: orderResult, error } = await supabase.functions.invoke("execute-order", {
+          const response = await supabase.functions.invoke("execute-order", {
             body: {
               asset: symbol,
               direction,
@@ -266,40 +269,38 @@ export const useMultiTimeframeAnalysis = (
               checklist: checklist,
             },
           });
+          orderResult = response.data;
+          error = response.error;
+        } catch (invokeError: any) {
+          console.warn("[AUTO-EXECUTE] Invoke exception:", invokeError);
+          error = invokeError;
+        }
 
-          // Check for network errors, API errors (400 responses), or error in response body
-          const apiError = error || orderResult?.error;
-          
-          if (apiError) {
-            const errorMessage = typeof apiError === 'string' ? apiError : (apiError?.message || JSON.stringify(apiError));
-            console.warn("[AUTO-EXECUTE] Ordem bloqueada:", errorMessage);
-            toast({
-              title: "⚠️ Ordem não executada",
-              description: errorMessage,
-              variant: "destructive",
-            });
-            return; // Exit gracefully without crashing
-          } 
-          
-          if (orderResult?.success) {
-            // Marcar como executado
-            lastExecutedSignalRef.current = signalId;
-            
-            toast({
-              title: `✅ Ordem ${direction} executada`,
-              description: `${symbol} @ $${entry.toFixed(2)} | R:R 1:${riskReward.toFixed(2)} | ${settings.paper_mode ? 'PAPER' : 'REAL'}`,
-            });
-          }
-        } catch (invokeError) {
-          console.error("[AUTO-EXECUTE] Erro na chamada:", invokeError);
+        // Check for network errors, API errors (400 responses), or error in response body
+        const apiError = error || orderResult?.error;
+        
+        if (apiError) {
+          const errorMessage = typeof apiError === 'string' 
+            ? apiError 
+            : (apiError?.message || apiError?.error || JSON.stringify(apiError));
+          console.warn("[AUTO-EXECUTE] Ordem bloqueada:", errorMessage);
           toast({
-            title: "⚠️ Erro de conexão",
-            description: "Não foi possível comunicar com o servidor",
+            title: "⚠️ Ordem não executada",
+            description: errorMessage,
             variant: "destructive",
           });
+          return; // Exit gracefully
+        } 
+        
+        if (orderResult?.success) {
+          lastExecutedSignalRef.current = signalId;
+          toast({
+            title: `✅ Ordem ${direction} executada`,
+            description: `${symbol} @ $${entry.toFixed(2)} | R:R 1:${riskReward.toFixed(2)} | ${settings.paper_mode ? 'PAPER' : 'REAL'}`,
+          });
         }
-      } catch (error) {
-        console.error("[AUTO-EXECUTE] Erro geral:", error);
+      } catch (error: any) {
+        console.error("[AUTO-EXECUTE] Erro geral:", error?.message || error);
       }
     };
 
