@@ -7,6 +7,73 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Interface para regras de trading da Binance
+interface ExchangeInfo {
+  symbol: string;
+  minQty: number;
+  maxQty: number;
+  stepSize: number;
+  quantityPrecision: number;
+  pricePrecision: number;
+  tickSize: number;
+}
+
+// Buscar regras de trading da Binance FUTURES
+async function getExchangeInfo(symbol: string): Promise<ExchangeInfo> {
+  try {
+    console.log(`[EXCHANGE-INFO] Buscando regras para ${symbol}...`);
+    
+    const response = await fetch(`https://fapi.binance.com/fapi/v1/exchangeInfo?symbol=${symbol}`);
+    
+    if (!response.ok) {
+      throw new Error(`Falha ao buscar exchangeInfo: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const symbolInfo = data.symbols?.find((s: any) => s.symbol === symbol);
+    
+    if (!symbolInfo) {
+      throw new Error(`Símbolo ${symbol} não encontrado na Binance`);
+    }
+    
+    const filters = symbolInfo.filters || [];
+    const lotSizeFilter = filters.find((f: any) => f.filterType === 'LOT_SIZE') || {};
+    const priceFilter = filters.find((f: any) => f.filterType === 'PRICE_FILTER') || {};
+    
+    const exchangeInfo: ExchangeInfo = {
+      symbol: symbolInfo.symbol,
+      minQty: parseFloat(lotSizeFilter.minQty || '0.001'),
+      maxQty: parseFloat(lotSizeFilter.maxQty || '1000'),
+      stepSize: parseFloat(lotSizeFilter.stepSize || '0.001'),
+      quantityPrecision: symbolInfo.quantityPrecision || 3,
+      pricePrecision: symbolInfo.pricePrecision || 2,
+      tickSize: parseFloat(priceFilter.tickSize || '0.01'),
+    };
+    
+    console.log(`[EXCHANGE-INFO] ✅ Regras: stepSize=${exchangeInfo.stepSize}, quantityPrecision=${exchangeInfo.quantityPrecision}`);
+    
+    return exchangeInfo;
+  } catch (error) {
+    console.error(`[EXCHANGE-INFO] ❌ Erro:`, error);
+    return {
+      symbol,
+      minQty: 0.001,
+      maxQty: 1000,
+      stepSize: 0.001,
+      quantityPrecision: 3,
+      pricePrecision: 2,
+      tickSize: 0.10,
+    };
+  }
+}
+
+// Arredondar quantidade para stepSize
+function roundToStepSize(quantity: number, stepSize: number, precision: number): number {
+  const factor = 1 / stepSize;
+  const rounded = Math.floor(quantity * factor) / factor;
+  return parseFloat(rounded.toFixed(precision));
+}
+
 // Função para criar assinatura HMAC-SHA256 (igual ao execute-order)
 async function createBinanceSignature(queryString: string, apiSecret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -51,26 +118,36 @@ serve(async (req) => {
       throw new Error('Posição não encontrada');
     }
 
-    // 2. Calcular PnL final
+    // 2. Buscar exchangeInfo para validar quantidade
+    const symbol = position.asset.replace('/', '').toUpperCase();
+    const exchangeInfo = await getExchangeInfo(symbol);
+
+    // 3. Calcular quantidade e PnL final
     const quantity = position.projected_profit / Math.abs(position.take_profit - position.entry_price);
+    
+    // Arredondar quantidade para stepSize
+    const validatedQuantity = roundToStepSize(quantity, exchangeInfo.stepSize, exchangeInfo.quantityPrecision);
+    
     let finalPnL = 0;
 
     if (position.direction === 'LONG') {
-      finalPnL = (exitPrice - position.entry_price) * quantity;
+      finalPnL = (exitPrice - position.entry_price) * validatedQuantity;
     } else {
-      finalPnL = (position.entry_price - exitPrice) * quantity;
+      finalPnL = (position.entry_price - exitPrice) * validatedQuantity;
     }
 
+    console.log(`[CLOSE-POSITION] Quantidade original: ${quantity.toFixed(6)}`);
+    console.log(`[CLOSE-POSITION] Quantidade validada: ${validatedQuantity} (stepSize: ${exchangeInfo.stepSize})`);
     console.log(`[CLOSE-POSITION] PnL calculado: $${finalPnL.toFixed(2)}`);
 
-    // 3. Buscar configurações do usuário
+    // 4. Buscar configurações do usuário
     const { data: settings } = await supabase
       .from('user_settings')
       .select('paper_mode, balance')
       .eq('user_id', position.user_id)
       .single();
 
-    // 4. Executar fechamento na Binance FUTURES (se Real Mode)
+    // 5. Executar fechamento na Binance FUTURES (se Real Mode)
     let binanceOrderId = `PAPER_CLOSE_${Date.now()}`;
 
     if (settings && !settings.paper_mode) {
@@ -93,11 +170,9 @@ serve(async (req) => {
           const encryptedKey = credentials.encrypted_api_key || '';
           const encryptedSecret = credentials.encrypted_api_secret || '';
           
-          // Tentar decodificar base64 e remover prefixo masterKey:
           const decodedKey = atob(encryptedKey);
           const decodedSecret = atob(encryptedSecret);
           
-          // Se contém ":", é formato masterKey:valor
           if (decodedKey.includes(':')) {
             apiKey = decodedKey.split(':').slice(1).join(':');
           } else {
@@ -122,9 +197,8 @@ serve(async (req) => {
 
         // Preparar parâmetros para ordem FUTURES
         const timestamp = Date.now();
-        const symbol = position.asset.replace('/', ''); // BTCUSDT format
         const side = position.direction === 'LONG' ? 'SELL' : 'BUY';
-        const quantityFormatted = quantity.toFixed(3); // 3 decimais para BTC
+        const quantityFormatted = validatedQuantity.toFixed(exchangeInfo.quantityPrecision);
         
         const params = new URLSearchParams({
           symbol: symbol,
@@ -162,7 +236,6 @@ serve(async (req) => {
           console.error(`[CLOSE-POSITION] ❌ Erro na Binance FUTURES:`, binanceData);
           console.error(`[CLOSE-POSITION] Status: ${binanceResponse.status}`);
           console.error(`[CLOSE-POSITION] Detalhes: code=${binanceData.code}, msg=${binanceData.msg}`);
-          // Não lançar erro aqui para permitir atualização do banco mesmo se Binance falhar
         }
       } else {
         console.log(`[CLOSE-POSITION] Credenciais Binance não encontradas para usuário`);
@@ -171,13 +244,13 @@ serve(async (req) => {
       console.log(`[CLOSE-POSITION] Modo PAPER - Simulando fechamento`);
     }
 
-    // 5. Deletar de active_positions
+    // 6. Deletar de active_positions
     await supabase
       .from('active_positions')
       .delete()
       .eq('id', positionId);
 
-    // 6. Atualizar operations
+    // 7. Atualizar operations
     const { error: updateError } = await supabase
       .from('operations')
       .update({
@@ -195,7 +268,7 @@ serve(async (req) => {
       console.error('[CLOSE-POSITION] Erro ao atualizar operations:', updateError);
     }
 
-    // 7. Atualizar user_settings (balance)
+    // 8. Atualizar user_settings (balance)
     if (settings) {
       const newBalance = settings.balance + finalPnL;
       await supabase
@@ -206,7 +279,7 @@ serve(async (req) => {
       console.log(`[CLOSE-POSITION] Balance atualizado: $${settings.balance.toFixed(2)} → $${newBalance.toFixed(2)}`);
     }
 
-    // 8. Log
+    // 9. Log
     await supabase.from('agent_logs').insert({
       user_id: position.user_id,
       agent_name: 'POSITION_CLOSER',
@@ -219,6 +292,11 @@ serve(async (req) => {
         result,
         binanceOrderId,
         paperMode: settings?.paper_mode || true,
+        quantityValidated: validatedQuantity,
+        exchangeInfo: {
+          stepSize: exchangeInfo.stepSize,
+          quantityPrecision: exchangeInfo.quantityPrecision,
+        },
       },
     });
 
