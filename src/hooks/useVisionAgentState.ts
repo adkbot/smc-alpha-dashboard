@@ -19,11 +19,16 @@ export const useVisionAgentState = () => {
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (error) throw error;
+      // Ignorar erros quando não há dados (406 = Not Acceptable)
+      if (error && error.code !== 'PGRST116') {
+        console.warn('[Vision Agent] Error fetching state:', error.message);
+        return null;
+      }
       return data;
     },
     enabled: !!user?.id,
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 30000, // Refresh every 30 seconds (reduced from 5s)
+    retry: false, // Don't retry on error
   });
 
   // Fetch learning statistics
