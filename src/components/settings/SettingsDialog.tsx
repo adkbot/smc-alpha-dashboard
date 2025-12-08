@@ -209,8 +209,11 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
     }
   };
 
+  const [binanceErrorDetails, setBinanceErrorDetails] = useState<string | null>(null);
+
   const testBinanceConnection = async () => {
     setTestingBinance(true);
+    setBinanceErrorDetails(null);
     try {
       const { data, error } = await supabase.functions.invoke("test-broker-connection", {
         body: { broker_type: "binance" },
@@ -222,7 +225,7 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       
       if (data.status === "success") {
         toast({
-          title: "Conexão bem-sucedida",
+          title: "✅ Conexão bem-sucedida",
           description: data.message,
         });
 
@@ -231,14 +234,17 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           await syncRealBalance();
         }
       } else {
+        // Guardar detalhes do erro para exibição
+        setBinanceErrorDetails(data.message);
         toast({
-          title: "Falha na conexão",
-          description: data.message,
+          title: "❌ Falha na conexão",
+          description: "Verifique os detalhes do erro abaixo.",
           variant: "destructive",
         });
       }
     } catch (error: any) {
       setBinanceStatus("failed");
+      setBinanceErrorDetails(error.message);
       toast({
         title: "Erro",
         description: error.message,
@@ -458,6 +464,34 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               </div>
             )}
 
+            {/* Exibir detalhes do erro se falhar */}
+            {binanceStatus === "failed" && binanceErrorDetails && (
+              <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md space-y-2">
+                <div className="flex items-start gap-2">
+                  <X className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-destructive whitespace-pre-line">
+                    {binanceErrorDetails}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2 border-t border-border pt-2">
+                  <strong>Requisitos da API Binance:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1">
+                    <li>Permissões: "Enable Reading" + "Enable Futures"</li>
+                    <li>IP Whitelist: Remova a restrição ou adicione IPs permitidos</li>
+                    <li>Copie API Key e Secret sem espaços extras</li>
+                  </ul>
+                  <a 
+                    href="https://www.binance.com/pt-BR/my/settings/api-management" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary underline mt-2 inline-block"
+                  >
+                    Abrir Gerenciamento de API na Binance →
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="binance-key">API Key</Label>
               <Input
@@ -489,6 +523,37 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
                 {testingBinance && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Testar Conexão
               </Button>
+            </div>
+
+            {/* Checklist de requisitos */}
+            <div className="p-3 bg-secondary/50 rounded-md">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Checklist de Configuração:</p>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  API Key e Secret configurados
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Permissão "Enable Reading" ativa
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Permissão "Enable Futures" ativa (para trading)
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Conexão testada e validada
+                </li>
+              </ul>
             </div>
           </TabsContent>
 
