@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +16,7 @@ interface BotStatus {
   todayTrades: number;
   paperMode: boolean;
   binanceConnected: boolean;
+  autoTradingEnabled: boolean;
 }
 
 export const BotControlPanel = () => {
@@ -26,8 +29,10 @@ export const BotControlPanel = () => {
     todayTrades: 0,
     paperMode: true,
     binanceConnected: false,
+    autoTradingEnabled: false,
   });
   const [loading, setLoading] = useState(false);
+  const [autoToggleLoading, setAutoToggleLoading] = useState(false);
 
   const ensureUserSettings = async () => {
     if (!user) return null;
@@ -103,6 +108,7 @@ export const BotControlPanel = () => {
         todayTrades: tradesCount || 0,
         paperMode: settings?.paper_mode ?? true,
         binanceConnected,
+        autoTradingEnabled: settings?.auto_trading_enabled ?? false,
       });
     } catch (error) {
       console.error("Erro ao buscar status do bot:", error);
@@ -249,6 +255,37 @@ export const BotControlPanel = () => {
     }
   };
 
+  const toggleAutoTrading = async (enabled: boolean) => {
+    if (!user) return;
+    setAutoToggleLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from("user_settings")
+        .update({ auto_trading_enabled: enabled })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: enabled ? "⚡ Auto Trading ATIVADO" : "🔒 Auto Trading DESATIVADO",
+        description: enabled 
+          ? "Ordens serão executadas automaticamente quando Pre-List for aprovada"
+          : "Bot apenas monitora, sem execução automática",
+      });
+
+      fetchBotStatus();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao alterar Auto Trading",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAutoToggleLoading(false);
+    }
+  };
+
   return (
     <Card className="p-4 m-4">
       <div className="flex items-center justify-between mb-4">
@@ -329,6 +366,33 @@ export const BotControlPanel = () => {
           <Square className="w-4 h-4 mr-1" />
           PARAR
         </Button>
+      </div>
+
+      {/* AUTO TRADING TOGGLE */}
+      <div className={`p-3 rounded-lg border-2 mb-4 ${
+        botStatus.autoTradingEnabled 
+          ? 'bg-accent/10 border-accent' 
+          : 'bg-muted border-border'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className={`w-4 h-4 ${botStatus.autoTradingEnabled ? 'text-accent' : 'text-muted-foreground'}`} />
+            <Label htmlFor="auto-trading" className="text-sm font-bold cursor-pointer">
+              Auto Trading
+            </Label>
+          </div>
+          <Switch
+            id="auto-trading"
+            checked={botStatus.autoTradingEnabled}
+            onCheckedChange={toggleAutoTrading}
+            disabled={autoToggleLoading}
+          />
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          {botStatus.autoTradingEnabled 
+            ? "⚡ Executa ordens automaticamente quando Pre-List Trader Raiz é aprovada"
+            : "🔒 Bot monitora mas não executa ordens automaticamente"}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">

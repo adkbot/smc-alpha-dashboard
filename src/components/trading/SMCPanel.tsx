@@ -603,26 +603,43 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             </div>
           </Card>
           
-          <Card className="p-2 mt-2 bg-muted/50">
+          <Card className={`p-2 mt-2 ${
+            ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && mtfData.dominantBias.bias === "ALTA") ||
+            ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && mtfData.dominantBias.bias === "BAIXA")
+              ? "bg-warning/20 border-warning"
+              : "bg-muted/50"
+          }`}>
             <p className="text-[10px] text-muted-foreground">
-              {mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" && 
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && 
                mtfData.dominantBias.bias === "BAIXA" && (
                 "✅ Preço em zona premium + viés de baixa = Zona ideal para SHORT"
               )}
-              {mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT" && 
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && 
                mtfData.dominantBias.bias === "ALTA" && (
                 "✅ Preço em zona discount + viés de alta = Zona ideal para LONG"
               )}
-              {mtfData.currentTimeframe.premiumDiscount.status === "EQUILIBRIUM" && (
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "EQUILIBRIUM" && (
                 "⏸️ Preço em equilíbrio - Aguardar movimento para zona premium ou discount"
               )}
-              {mtfData.currentTimeframe.premiumDiscount.status === "PREMIUM" && 
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && 
                mtfData.dominantBias.bias === "ALTA" && (
-                "⚠️ Preço em premium mas viés é de alta - Aguardar pullback para discount"
+                <>
+                  <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
+                  <br />
+                  <span>Viés ALTA + Preço em PREMIUM = NÃO COMPRAR (não comprar caro)</span>
+                  <br />
+                  <span className="text-muted-foreground/70">Aguardar pullback para zona DISCOUNT antes de entrada LONG</span>
+                </>
               )}
-              {mtfData.currentTimeframe.premiumDiscount.status === "DISCOUNT" && 
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && 
                mtfData.dominantBias.bias === "BAIXA" && (
-                "⚠️ Preço em discount mas viés é de baixa - Aguardar rejeição em premium"
+                <>
+                  <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
+                  <br />
+                  <span>Viés BAIXA + Preço em DISCOUNT = NÃO VENDER (não vender barato)</span>
+                  <br />
+                  <span className="text-muted-foreground/70">Aguardar rejeição em zona PREMIUM antes de entrada SHORT</span>
+                </>
               )}
             </p>
           </Card>
