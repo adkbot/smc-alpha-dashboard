@@ -8,7 +8,7 @@ const corsHeaders = {
 
 // Mapear erros da Binance para mensagens em português
 const binanceErrorMessages: Record<string, string> = {
-  '-2015': 'API Key inválida. Verifique se copiou a chave corretamente.',
+  '-2015': 'API Key inválida ou expirada. Gere uma nova chave na Binance.',
   '-1022': 'Assinatura inválida. Verifique se o API Secret está correto.',
   '-2014': 'IP não autorizado. Adicione o IP do servidor na whitelist da Binance ou remova a restrição de IP.',
   '-1021': 'Timestamp fora de sincronização. Tente novamente.',
@@ -62,10 +62,12 @@ async function testBinanceSpot(apiKey: string, apiSecret: string): Promise<{ suc
 
     if (response.ok) {
       const data = await response.json();
-      console.log('[SPOT] Conexão bem-sucedida');
+      const usdtBalance = data.balances?.find((b: any) => b.asset === 'USDT');
+      const hasBalance = usdtBalance ? (parseFloat(usdtBalance.free) + parseFloat(usdtBalance.locked)) : 0;
+      console.log('[SPOT] Conexão bem-sucedida, USDT:', hasBalance);
       return { 
         success: true, 
-        message: `Binance SPOT conectado! Balanços disponíveis.` 
+        message: `Binance SPOT conectado! USDT: $${hasBalance.toFixed(2)}` 
       };
     } else {
       const errorData = await response.json();
@@ -105,10 +107,12 @@ async function testBinanceFutures(apiKey: string, apiSecret: string): Promise<{ 
 
     if (response.ok) {
       const data = await response.json();
-      console.log('[FUTURES] Conexão bem-sucedida');
+      const usdtAsset = data?.find((b: any) => b.asset === 'USDT');
+      const hasBalance = usdtAsset ? parseFloat(usdtAsset.balance) : 0;
+      console.log('[FUTURES] Conexão bem-sucedida, USDT:', hasBalance);
       return { 
         success: true, 
-        message: `Binance FUTURES conectado! ${data.length} ativos disponíveis.` 
+        message: `Binance FUTURES conectado! USDT: $${hasBalance.toFixed(2)}` 
       };
     } else {
       const errorData = await response.json();
@@ -179,56 +183,65 @@ serve(async (req) => {
 
     console.log(`[TEST-CONNECTION] API Key length: ${apiKey.length}, Secret length: ${apiSecret.length}`);
 
-    let testResult = { status: 'failed', message: 'Erro desconhecido', details: '' };
+    let testResult = { status: 'failed', message: 'Erro desconhecido', details: '', spotOk: false, futuresOk: false };
 
     if (broker_type === 'binance') {
-      // Testar SPOT primeiro
+      // Testar AMBOS os endpoints (SPOT e FUTURES)
       const spotResult = await testBinanceSpot(apiKey, apiSecret);
+      const futuresResult = await testBinanceFutures(apiKey, apiSecret);
       
-      if (spotResult.success) {
+      console.log('[TEST-CONNECTION] SPOT result:', spotResult);
+      console.log('[TEST-CONNECTION] FUTURES result:', futuresResult);
+
+      // Determinar status geral
+      if (spotResult.success || futuresResult.success) {
+        // Pelo menos um funcionou = sucesso
+        const workingApis: string[] = [];
+        if (spotResult.success) workingApis.push('SPOT');
+        if (futuresResult.success) workingApis.push('FUTURES');
+        
         testResult = { 
           status: 'success',
-          message: spotResult.message,
-          details: 'SPOT API funcionando'
+          message: `Binance conectado! APIs funcionando: ${workingApis.join(', ')}`,
+          details: `${spotResult.success ? spotResult.message : `SPOT: ${spotResult.message}`}\n${futuresResult.success ? futuresResult.message : `FUTURES: ${futuresResult.message}`}`,
+          spotOk: spotResult.success,
+          futuresOk: futuresResult.success,
         };
       } else {
-        // Se SPOT falhar, tentar FUTURES
-        console.log('[TEST-CONNECTION] SPOT falhou, tentando FUTURES...');
-        const futuresResult = await testBinanceFutures(apiKey, apiSecret);
+        // Ambos falharam - mostrar erro mais detalhado
+        const isIpError = spotResult.errorCode === '-2014' || futuresResult.errorCode === '-2014';
+        const isKeyError = spotResult.errorCode === '-2015' || futuresResult.errorCode === '-2015';
+        const isSignatureError = spotResult.errorCode === '-1022' || futuresResult.errorCode === '-1022';
+        const isPermissionError = spotResult.errorCode === '-2008' || futuresResult.errorCode === '-2008';
         
-        if (futuresResult.success) {
-          testResult = { 
-            status: 'success',
-            message: futuresResult.message,
-            details: 'FUTURES API funcionando'
-          };
+        let helpMessage = '\n\n💡 Dica: ';
+        if (isIpError) {
+          helpMessage += 'Na Binance, vá em API Management e remova a restrição de IP ou adicione todos os IPs permitidos.';
+        } else if (isKeyError) {
+          helpMessage += 'Verifique se a API Key foi copiada completamente, sem espaços extras. Gere uma nova chave se necessário.';
+        } else if (isSignatureError) {
+          helpMessage += 'Verifique se o API Secret foi copiado completamente, sem espaços extras.';
+        } else if (isPermissionError) {
+          helpMessage += 'Sua API Key não tem permissões necessárias. Crie uma nova chave com permissões de Futures habilitadas.';
         } else {
-          // Ambos falharam - mostrar erro mais detalhado
-          const isIpError = spotResult.errorCode === '-2014' || futuresResult.errorCode === '-2014';
-          const isKeyError = spotResult.errorCode === '-2015' || futuresResult.errorCode === '-2015';
-          const isSignatureError = spotResult.errorCode === '-1022' || futuresResult.errorCode === '-1022';
-          
-          let helpMessage = '';
-          if (isIpError) {
-            helpMessage = '\n\n💡 Dica: Na Binance, vá em API Management e remova a restrição de IP ou adicione todos os IPs permitidos.';
-          } else if (isKeyError) {
-            helpMessage = '\n\n💡 Dica: Verifique se a API Key foi copiada completamente, sem espaços extras.';
-          } else if (isSignatureError) {
-            helpMessage = '\n\n💡 Dica: Verifique se o API Secret foi copiado completamente, sem espaços extras.';
-          }
-          
-          testResult = {
-            status: 'failed',
-            message: `SPOT: ${spotResult.message}\nFUTURES: ${futuresResult.message}${helpMessage}`,
-            details: `Códigos: SPOT=${spotResult.errorCode || 'N/A'}, FUTURES=${futuresResult.errorCode || 'N/A'}`
-          };
+          helpMessage += 'Verifique suas credenciais e tente novamente. Se o problema persistir, gere novas chaves na Binance.';
         }
+        
+        testResult = {
+          status: 'failed',
+          message: `Falha na conexão.\n\nSPOT: ${spotResult.message}\nFUTURES: ${futuresResult.message}${helpMessage}`,
+          details: `Códigos de erro: SPOT=${spotResult.errorCode || 'N/A'}, FUTURES=${futuresResult.errorCode || 'N/A'}`,
+          spotOk: false,
+          futuresOk: false,
+        };
       }
     } else if (broker_type === 'forex') {
       testResult = {
         status: 'pending',
         message: 'Credenciais Forex salvas. Teste de conexão requer implementação específica do broker.',
-        details: ''
+        details: '',
+        spotOk: false,
+        futuresOk: false,
       };
     }
 
@@ -242,7 +255,7 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .eq('broker_type', broker_type);
 
-    console.log(`[TEST-CONNECTION] Resultado: ${testResult.status} - ${testResult.message}`);
+    console.log(`[TEST-CONNECTION] Resultado final: ${testResult.status}`);
 
     return new Response(
       JSON.stringify(testResult),
