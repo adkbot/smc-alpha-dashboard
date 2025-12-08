@@ -27,29 +27,57 @@ const Auth = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is coming from a recovery link
+    // Check URL params for recovery mode
     const type = searchParams.get("type");
-    if (type === "recovery") {
+    const errorCode = searchParams.get("error_code");
+    const errorDescription = searchParams.get("error_description");
+    
+    // Also check hash fragments (Supabase sometimes uses these)
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const hashType = hashParams.get("type");
+    const accessToken = hashParams.get("access_token");
+    
+    const isRecoveryMode = type === "recovery" || hashType === "recovery" || accessToken;
+    
+    // Handle expired token error
+    if (errorCode === "otp_expired" || errorDescription?.includes("expired")) {
+      toast({
+        title: "Link expirado",
+        description: "O link de recuperação expirou. Solicite um novo.",
+        variant: "destructive",
+      });
+      setAuthMode("forgot-password");
+      return;
+    }
+    
+    // If recovery mode, show reset form and DON'T check session
+    if (isRecoveryMode) {
       setAuthMode("reset-password");
+      return; // Exit early - don't check session or redirect
     }
 
+    // Only check session if NOT in recovery mode
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && authMode !== "reset-password") {
+      // Double-check we're not in recovery mode before redirecting
+      const currentType = searchParams.get("type");
+      if (session && currentType !== "recovery") {
         navigate("/dashboard");
       }
     });
 
-    // Listen for auth state changes (including password recovery)
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setAuthMode("reset-password");
-      } else if (session && authMode !== "reset-password") {
+      console.log("Auth event:", event);
+      
+      // Only redirect if NOT in recovery mode
+      const currentType = searchParams.get("type");
+      if (session && currentType !== "recovery") {
         navigate("/dashboard");
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, searchParams, authMode]);
+  }, [navigate, searchParams, toast]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
