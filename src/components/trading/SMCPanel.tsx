@@ -329,36 +329,79 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         </>
       ) : null}
 
-      {/* Market Structure */}
+      {/* Market Structure - Exibição aprimorada de BOS/CHOCH */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             Estrutura de Mercado
           </h3>
-          <Badge variant="outline" className={getTrendColor()}>
-            {trend}
+          <Badge variant="outline" className={`${
+            mtfData?.currentTimeframe?.trend === "ALTA" 
+              ? "text-success border-success" 
+              : mtfData?.currentTimeframe?.trend === "BAIXA"
+              ? "text-destructive border-destructive"
+              : "text-muted-foreground border-muted"
+          }`}>
+            {mtfData?.currentTimeframe?.trend || "NEUTRO"}
           </Badge>
         </div>
         
         <div className="grid grid-cols-2 gap-2">
-          <Card className="p-3 bg-secondary border-border">
-            <div className="text-xs text-muted-foreground mb-1">Último BOS</div>
+          <Card className={`p-3 border-2 ${
+            mtfData?.currentTimeframe?.lastBOS 
+              ? "bg-success/10 border-success" 
+              : "bg-secondary border-border"
+          }`}>
+            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+              {mtfData?.currentTimeframe?.lastBOS && <span className="text-success">✓</span>}
+              Último BOS
+            </div>
             <div className="text-sm font-bold text-foreground font-mono">
               {mtfData?.currentTimeframe?.lastBOS 
-                ? new Date(mtfData.currentTimeframe.lastBOS).toLocaleTimeString()
+                ? new Date(mtfData.currentTimeframe.lastBOS).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                 : "—"}
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-1">
+              {mtfData?.currentTimeframe?.bosCount 
+                ? `${mtfData.currentTimeframe.bosCount} quebra(s)` 
+                : "Nenhuma quebra"}
             </div>
           </Card>
           
-          <Card className="p-3 bg-secondary border-border">
-            <div className="text-xs text-muted-foreground mb-1">Último CHOCH</div>
+          <Card className={`p-3 border-2 ${
+            mtfData?.currentTimeframe?.lastCHOCH 
+              ? "bg-warning/10 border-warning" 
+              : "bg-secondary border-border"
+          }`}>
+            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+              {mtfData?.currentTimeframe?.lastCHOCH && <span className="text-warning">⚡</span>}
+              Último CHOCH
+            </div>
             <div className="text-sm font-bold text-foreground font-mono">
               {mtfData?.currentTimeframe?.lastCHOCH 
-                ? new Date(mtfData.currentTimeframe.lastCHOCH).toLocaleTimeString()
+                ? new Date(mtfData.currentTimeframe.lastCHOCH).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                 : "—"}
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-1">
+              {mtfData?.currentTimeframe?.chochCount 
+                ? `${mtfData.currentTimeframe.chochCount} mudança(s)` 
+                : "Sem mudança"}
             </div>
           </Card>
         </div>
+        
+        {/* Indicador de estrutura do checklist */}
+        {mtfData?.checklist && (
+          <div className={`mt-2 p-2 rounded text-[10px] ${
+            mtfData.checklist.structureBroken 
+              ? "bg-success/20 text-success" 
+              : "bg-muted text-muted-foreground"
+          }`}>
+            {mtfData.checklist.structureBroken 
+              ? `✓ ${mtfData.checklist.structureType} confirmado em $${mtfData.checklist.structurePrice?.toFixed(2) || '—'}`
+              : "⏳ Aguardando quebra de estrutura"}
+          </div>
+        )}
       </div>
 
       {/* POIs (Points of Interest) - Apenas 2 cards: melhor LONG + melhor SHORT */}
