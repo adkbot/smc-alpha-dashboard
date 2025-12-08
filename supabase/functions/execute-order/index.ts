@@ -7,6 +7,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Função para determinar sessão de trading baseada no horário UTC
+function getTradingSession(): string {
+  const hour = new Date().getUTCHours();
+  if (hour >= 22 || hour < 7) return 'OCEANIA';
+  if (hour >= 7 && hour < 9) return 'ASIA';
+  if (hour >= 9 && hour < 13) return 'LONDON';
+  return 'NY';
+}
+
 // Interface para checklist Trader Raiz
 interface TraderRaizChecklist {
   swingsMapped: boolean;
@@ -281,27 +290,20 @@ serve(async (req) => {
       throw new Error(`Bot não está em execução (status: ${settings.bot_status})`);
     }
 
-    // 2. Verificar se já existe posição no mesmo ativo
-    const { data: existingPosition } = await supabase
+    // 2. 🚨 NOVA REGRA: Verificar se já existe QUALQUER posição aberta (qualquer par)
+    // Só permite UMA posição aberta por vez no sistema inteiro
+    const { data: existingPositions, error: posError } = await supabase
       .from('active_positions')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('asset', asset)
-      .single();
-
-    if (existingPosition) {
-      throw new Error('Já existe uma posição aberta neste ativo');
-    }
-
-    // 3. Verificar max_positions
-    const { count } = await supabase
-      .from('active_positions')
-      .select('id', { count: 'exact' })
+      .select('id, asset')
       .eq('user_id', user.id);
 
-    if (count && count >= settings.max_positions) {
-      throw new Error(`Número máximo de posições atingido (${settings.max_positions})`);
+    if (existingPositions && existingPositions.length > 0) {
+      const openAssets = existingPositions.map(p => p.asset).join(', ');
+      console.log(`[EXECUTE-ORDER] ❌ BLOQUEADO: Já existe posição aberta em: ${openAssets}`);
+      throw new Error(`Já existe posição aberta em: ${openAssets}. Feche a posição atual antes de abrir uma nova.`);
     }
+
+    console.log(`[EXECUTE-ORDER] ✅ Nenhuma posição aberta - permitido continuar`);
 
     // 4. Validar saldo mínimo
     if (settings.balance < 10) {
@@ -611,12 +613,20 @@ serve(async (req) => {
     }
 
     // 12. Registrar em active_positions (usar preços validados)
+    // CORREÇÃO: Mapear direction LONG→BUY, SHORT→SELL para cumprir constraint do banco
+    const dbDirection = direction === 'LONG' ? 'BUY' : 'SELL';
+    const validSession = signal_data?.session && ['OCEANIA', 'ASIA', 'LONDON', 'NY'].includes(signal_data.session)
+      ? signal_data.session
+      : getTradingSession();
+
+    console.log(`[EXECUTE-ORDER] 📝 Registrando posição - direction: ${direction} → ${dbDirection}, session: ${validSession}`);
+
     const { data: position, error: positionError } = await supabase
       .from('active_positions')
       .insert({
         user_id: user.id,
         asset,
-        direction,
+        direction: dbDirection,
         entry_price: executedPrice,
         current_price: executedPrice,
         stop_loss: validatedStopLoss,
@@ -624,22 +634,26 @@ serve(async (req) => {
         risk_reward,
         projected_profit: projectedProfit,
         agents: signal_data,
-        session: signal_data?.session || 'UNKNOWN',
+        session: validSession,
       })
       .select()
       .single();
 
     if (positionError) {
+      console.error(`[EXECUTE-ORDER] ❌ Erro ao registrar posição:`, positionError);
       throw new Error(`Erro ao registrar posição: ${positionError.message}`);
     }
 
+    console.log(`[EXECUTE-ORDER] ✅ Posição registrada com sucesso: ${position.id}`);
+
     // 13. Registrar em operations (usar preços validados)
+    // CORREÇÃO: Mesmo mapeamento de direction e session
     const { error: operationError } = await supabase
       .from('operations')
       .insert({
         user_id: user.id,
         asset,
-        direction,
+        direction: dbDirection,
         entry_price: executedPrice,
         entry_time: new Date().toISOString(),
         stop_loss: validatedStopLoss,
@@ -648,7 +662,7 @@ serve(async (req) => {
         result: 'OPEN',
         strategy: 'TRADER_RAIZ_SMC',
         agents: signal_data,
-        session: signal_data?.session || 'UNKNOWN',
+        session: validSession,
       });
 
     if (operationError) {
