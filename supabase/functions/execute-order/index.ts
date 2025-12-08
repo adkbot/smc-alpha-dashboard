@@ -81,6 +81,45 @@ async function setLeverage(apiKey: string, apiSecret: string, symbol: string, le
 // Constantes para BTCUSDT FUTURES
 const MIN_QUANTITY_BTC = 0.001; // Quantidade mínima para BTCUSDT
 const QUANTITY_PRECISION = 3;   // Casas decimais para quantidade
+const MARGIN_BUFFER = 0.85;     // 85% do saldo disponível (15% buffer para taxas/margem manutenção)
+const OPENING_FEE_RATE = 0.0004; // 0.04% taxa de abertura Binance Futures
+
+// Função para buscar saldo real da Binance FUTURES
+async function getRealBinanceBalance(apiKey: string, apiSecret: string): Promise<number> {
+  try {
+    const timestamp = Date.now();
+    const params = new URLSearchParams({
+      timestamp: timestamp.toString(),
+    });
+    
+    const signature = await createBinanceSignature(params.toString(), apiSecret);
+    params.append('signature', signature);
+    
+    const response = await fetch(`https://fapi.binance.com/fapi/v2/balance?${params}`, {
+      method: 'GET',
+      headers: { 'X-MBX-APIKEY': apiKey },
+    });
+    
+    if (!response.ok) {
+      console.log('[BINANCE-BALANCE] ⚠️ Erro ao buscar saldo real');
+      return 0;
+    }
+    
+    const balances = await response.json();
+    const usdtBalance = balances.find((b: any) => b.asset === 'USDT');
+    
+    if (usdtBalance) {
+      const availableBalance = parseFloat(usdtBalance.availableBalance || usdtBalance.balance || '0');
+      console.log(`[BINANCE-BALANCE] ✅ Saldo REAL disponível: $${availableBalance.toFixed(2)} USDT`);
+      return availableBalance;
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error('[BINANCE-BALANCE] Erro:', error);
+    return 0;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -171,83 +210,13 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 6. CÁLCULO CORRETO PARA USDT-M FUTURES
+    // 6. OBTER CREDENCIAIS E SALDO REAL DA BINANCE
     // ========================================
     
-    const balanceUSDT = settings.balance;
-    const leverage = settings.leverage || 20;
+    let realBinanceBalance = 0;
+    let apiKey = '';
+    let apiSecret = '';
     
-    // risk_per_trade já está em decimal (ex: 0.10 = 10%)
-    const riskPercentage = settings.risk_per_trade < 1 
-      ? settings.risk_per_trade 
-      : settings.risk_per_trade / 100;
-    
-    // Risco em USDT
-    const riskAmountUSDT = balanceUSDT * riskPercentage;
-    
-    // Distância do Stop Loss em USDT (valor absoluto)
-    const stopDistanceUSDT = Math.abs(entry_price - stop_loss);
-    
-    // FÓRMULA CORRETA: Quantity = Risco USDT / Distância SL USDT
-    // Isso garante que se o SL for atingido, a perda será exatamente o riskAmount
-    let quantityBTC = riskAmountUSDT / stopDistanceUSDT;
-    
-    // Calcular valores para verificação de margem
-    const notionalValueUSDT = quantityBTC * entry_price;
-    const requiredMarginUSDT = notionalValueUSDT / leverage;
-    const availableMarginUSDT = balanceUSDT * 0.95; // 95% do saldo disponível
-    
-    console.log(`[EXECUTE-ORDER] ==========================================`);
-    console.log(`[EXECUTE-ORDER] 📊 CÁLCULO DE POSIÇÃO USDT-M FUTURES:`);
-    console.log(`[EXECUTE-ORDER] Saldo: $${balanceUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Risco: ${(riskPercentage * 100).toFixed(1)}% = $${riskAmountUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Entry: $${entry_price} | SL: $${stop_loss}`);
-    console.log(`[EXECUTE-ORDER] Distância SL: $${stopDistanceUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Quantity inicial: ${quantityBTC.toFixed(6)} BTC`);
-    console.log(`[EXECUTE-ORDER] Nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Margem requerida: $${requiredMarginUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Margem disponível (95%): $${availableMarginUSDT.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Alavancagem: ${leverage}x`);
-    
-    // Verificar se margem é suficiente
-    if (requiredMarginUSDT > availableMarginUSDT) {
-      console.log(`[EXECUTE-ORDER] ⚠️ Margem insuficiente! Ajustando quantidade...`);
-      
-      // Calcular quantidade máxima que cabe na margem
-      const maxNotionalUSDT = availableMarginUSDT * leverage;
-      quantityBTC = maxNotionalUSDT / entry_price;
-      
-      const newNotional = quantityBTC * entry_price;
-      const newMarginRequired = newNotional / leverage;
-      
-      console.log(`[EXECUTE-ORDER] Nova quantity: ${quantityBTC.toFixed(6)} BTC`);
-      console.log(`[EXECUTE-ORDER] Novo nocional: $${newNotional.toFixed(2)} USDT`);
-      console.log(`[EXECUTE-ORDER] Nova margem: $${newMarginRequired.toFixed(2)} USDT`);
-    }
-    
-    // Formatar quantidade para Binance (3 casas decimais, mínimo 0.001)
-    quantityBTC = Math.floor(quantityBTC * Math.pow(10, QUANTITY_PRECISION)) / Math.pow(10, QUANTITY_PRECISION);
-    
-    // Verificar quantidade mínima
-    if (quantityBTC < MIN_QUANTITY_BTC) {
-      console.log(`[EXECUTE-ORDER] ❌ Quantidade muito pequena: ${quantityBTC} BTC`);
-      throw new Error(`Quantidade muito pequena (${quantityBTC.toFixed(6)} BTC). Mínimo: ${MIN_QUANTITY_BTC} BTC. Aumente o saldo ou o risco por trade.`);
-    }
-    
-    // Calcular lucro/perda projetados
-    const projectedProfit = quantityBTC * Math.abs(take_profit - entry_price);
-    const projectedLoss = quantityBTC * stopDistanceUSDT;
-    
-    console.log(`[EXECUTE-ORDER] ==========================================`);
-    console.log(`[EXECUTE-ORDER] ✅ QUANTIDADE FINAL: ${quantityBTC.toFixed(QUANTITY_PRECISION)} BTC`);
-    console.log(`[EXECUTE-ORDER] Perda máxima (SL): $${projectedLoss.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] Lucro projetado (TP): $${projectedProfit.toFixed(2)} USDT`);
-    console.log(`[EXECUTE-ORDER] ==========================================`);
-
-    // 7. Executar ordem (Paper Mode ou Real Mode)
-    let executedPrice = entry_price;
-    let orderId = `PAPER_${Date.now()}`;
-
     if (!settings.paper_mode) {
       // Buscar credenciais da Binance
       const { data: credentials } = await supabase
@@ -264,8 +233,144 @@ serve(async (req) => {
 
       // Decrypt credentials
       const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-      const apiKey = atob(credentials.encrypted_api_key).replace(`${masterKey}:`, '');
-      const apiSecret = atob(credentials.encrypted_api_secret).replace(`${masterKey}:`, '');
+      apiKey = atob(credentials.encrypted_api_key).replace(`${masterKey}:`, '');
+      apiSecret = atob(credentials.encrypted_api_secret).replace(`${masterKey}:`, '');
+      
+      // Buscar saldo REAL da Binance
+      console.log(`[EXECUTE-ORDER] 🔍 Consultando saldo REAL da Binance...`);
+      realBinanceBalance = await getRealBinanceBalance(apiKey, apiSecret);
+      
+      if (realBinanceBalance < 10) {
+        throw new Error(`Saldo insuficiente na Binance ($${realBinanceBalance.toFixed(2)} USDT). Mínimo: $10`);
+      }
+    }
+
+    // ========================================
+    // 7. CÁLCULO CORRETO PARA USDT-M FUTURES
+    // ========================================
+    
+    // Usar saldo REAL da Binance em modo real, senão usar saldo do banco
+    const balanceUSDT = !settings.paper_mode && realBinanceBalance > 0 
+      ? realBinanceBalance 
+      : settings.balance;
+    
+    const leverage = settings.leverage || 20;
+    
+    // risk_per_trade já está em decimal (ex: 0.10 = 10%)
+    const riskPercentage = settings.risk_per_trade < 1 
+      ? settings.risk_per_trade 
+      : settings.risk_per_trade / 100;
+    
+    // Risco em USDT
+    const riskAmountUSDT = balanceUSDT * riskPercentage;
+    
+    // Distância do Stop Loss em USDT (valor absoluto)
+    const stopDistanceUSDT = Math.abs(entry_price - stop_loss);
+    
+    // FÓRMULA CORRETA: Quantity = Risco USDT / Distância SL USDT
+    let quantityBTC = riskAmountUSDT / stopDistanceUSDT;
+    
+    // Calcular valores para verificação de margem COM TAXA DE ABERTURA
+    const notionalValueUSDT = quantityBTC * entry_price;
+    const openingFeeUSDT = notionalValueUSDT * OPENING_FEE_RATE; // Taxa de 0.04%
+    const requiredMarginUSDT = (notionalValueUSDT / leverage) + openingFeeUSDT;
+    const availableMarginUSDT = balanceUSDT * MARGIN_BUFFER; // 85% do saldo
+    
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] 📊 CÁLCULO DE POSIÇÃO USDT-M FUTURES:`);
+    console.log(`[EXECUTE-ORDER] Saldo LOCAL: $${settings.balance.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Saldo BINANCE REAL: $${realBinanceBalance.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Saldo USADO: $${balanceUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Risco: ${(riskPercentage * 100).toFixed(1)}% = $${riskAmountUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Entry: $${entry_price} | SL: $${stop_loss}`);
+    console.log(`[EXECUTE-ORDER] Distância SL: $${stopDistanceUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Quantity inicial: ${quantityBTC.toFixed(6)} BTC`);
+    console.log(`[EXECUTE-ORDER] Nocional: $${notionalValueUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Taxa abertura (0.04%): $${openingFeeUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem requerida (c/taxa): $${requiredMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem disponível (${MARGIN_BUFFER * 100}%): $${availableMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Alavancagem: ${leverage}x`);
+    
+    // ========================================
+    // 8. REDUÇÃO AUTOMÁTICA SE MARGEM INSUFICIENTE
+    // ========================================
+    
+    let adjustmentAttempts = 0;
+    const MAX_ADJUSTMENT_ATTEMPTS = 5;
+    
+    while (requiredMarginUSDT > availableMarginUSDT && adjustmentAttempts < MAX_ADJUSTMENT_ATTEMPTS) {
+      adjustmentAttempts++;
+      console.log(`[EXECUTE-ORDER] ⚠️ Margem insuficiente! Tentativa ${adjustmentAttempts}/${MAX_ADJUSTMENT_ATTEMPTS} - Reduzindo quantidade em 10%...`);
+      
+      // Reduzir quantidade em 10%
+      quantityBTC = quantityBTC * 0.9;
+      
+      // Recalcular margem
+      const newNotional = quantityBTC * entry_price;
+      const newOpeningFee = newNotional * OPENING_FEE_RATE;
+      const newRequiredMargin = (newNotional / leverage) + newOpeningFee;
+      
+      console.log(`[EXECUTE-ORDER] Nova quantity: ${quantityBTC.toFixed(6)} BTC`);
+      console.log(`[EXECUTE-ORDER] Novo nocional: $${newNotional.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Nova margem requerida: $${newRequiredMargin.toFixed(2)} USDT`);
+      
+      if (newRequiredMargin <= availableMarginUSDT) {
+        console.log(`[EXECUTE-ORDER] ✅ Margem suficiente após ajuste!`);
+        break;
+      }
+    }
+    
+    // Se ainda não couber após 5 tentativas, calcular o máximo possível
+    if (adjustmentAttempts >= MAX_ADJUSTMENT_ATTEMPTS) {
+      console.log(`[EXECUTE-ORDER] 🔧 Calculando quantidade máxima possível...`);
+      
+      // Máximo nocional possível: margem disponível * leverage (descontando taxa)
+      // notional = margin * leverage
+      // requiredMargin = notional/leverage + notional*0.0004
+      // margin = notional/leverage + notional*0.0004
+      // margin = notional * (1/leverage + 0.0004)
+      // notional = margin / (1/leverage + 0.0004)
+      const maxNotionalUSDT = availableMarginUSDT / (1/leverage + OPENING_FEE_RATE);
+      quantityBTC = maxNotionalUSDT / entry_price;
+      
+      console.log(`[EXECUTE-ORDER] Nocional máximo possível: $${maxNotionalUSDT.toFixed(2)} USDT`);
+      console.log(`[EXECUTE-ORDER] Quantity máxima: ${quantityBTC.toFixed(6)} BTC`);
+    }
+    
+    // Formatar quantidade para Binance (3 casas decimais, mínimo 0.001)
+    quantityBTC = Math.floor(quantityBTC * Math.pow(10, QUANTITY_PRECISION)) / Math.pow(10, QUANTITY_PRECISION);
+    
+    // Verificar quantidade mínima
+    if (quantityBTC < MIN_QUANTITY_BTC) {
+      console.log(`[EXECUTE-ORDER] ❌ Quantidade muito pequena: ${quantityBTC} BTC`);
+      throw new Error(`Quantidade muito pequena (${quantityBTC.toFixed(6)} BTC). Mínimo: ${MIN_QUANTITY_BTC} BTC. Aumente o saldo ou o risco por trade.`);
+    }
+    
+    // Calcular lucro/perda projetados com quantidade final
+    const finalNotional = quantityBTC * entry_price;
+    const finalMarginRequired = (finalNotional / leverage) + (finalNotional * OPENING_FEE_RATE);
+    const projectedProfit = quantityBTC * Math.abs(take_profit - entry_price);
+    const projectedLoss = quantityBTC * stopDistanceUSDT;
+    
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+    console.log(`[EXECUTE-ORDER] ✅ QUANTIDADE FINAL: ${quantityBTC.toFixed(QUANTITY_PRECISION)} BTC`);
+    console.log(`[EXECUTE-ORDER] Nocional final: $${finalNotional.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem final requerida: $${finalMarginRequired.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Margem disponível: $${availableMarginUSDT.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Perda máxima (SL): $${projectedLoss.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Lucro projetado (TP): $${projectedProfit.toFixed(2)} USDT`);
+    console.log(`[EXECUTE-ORDER] Ajustes realizados: ${adjustmentAttempts}`);
+    console.log(`[EXECUTE-ORDER] ==========================================`);
+
+    // 9. Executar ordem (Paper Mode ou Real Mode)
+    let executedPrice = entry_price;
+    let orderId = `PAPER_${Date.now()}`;
+
+    if (!settings.paper_mode) {
+      // Credenciais já foram obtidas anteriormente para buscar saldo real
+      if (!apiKey || !apiSecret) {
+        throw new Error('Credenciais da Binance não disponíveis');
+      }
 
       const futuresSymbol = asset.toUpperCase();
 
