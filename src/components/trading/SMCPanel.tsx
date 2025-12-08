@@ -361,18 +361,30 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         </div>
       </div>
 
-      {/* POIs (Points of Interest) */}
-      {mtfData?.currentTimeframe?.pois && mtfData.currentTimeframe.pois.length > 0 && (
-        <div className="p-4 border-b border-border">
-          <h3 className="text-xs font-bold mb-3 flex items-center gap-2">
-            🎯 Points of Interest
-            <Badge variant="outline" className="text-[9px]">
-              {mtfData.currentTimeframe.pois.length}
-            </Badge>
-          </h3>
-          
-          <div className="space-y-2">
-            {mtfData.currentTimeframe.pois.slice(0, 3).map((poi) => (
+      {/* POIs (Points of Interest) - Apenas 2 cards: melhor LONG + melhor SHORT */}
+      {mtfData?.currentTimeframe?.pois && mtfData.currentTimeframe.pois.length > 0 && (() => {
+        // Filtrar melhor POI bullish (LONG) e melhor POI bearish (SHORT) por R:R
+        const bestBullishPOI = mtfData.currentTimeframe.pois
+          .filter(p => p.type === "bullish")
+          .sort((a, b) => b.riskReward - a.riskReward)[0];
+        const bestBearishPOI = mtfData.currentTimeframe.pois
+          .filter(p => p.type === "bearish")
+          .sort((a, b) => b.riskReward - a.riskReward)[0];
+        const displayPOIs = [bestBullishPOI, bestBearishPOI].filter(Boolean);
+        
+        if (displayPOIs.length === 0) return null;
+        
+        return (
+          <div className="p-4 border-b border-border">
+            <h3 className="text-xs font-bold mb-3 flex items-center gap-2">
+              🎯 Points of Interest
+              <Badge variant="outline" className="text-[9px]">
+                {displayPOIs.length > 1 ? "LONG + SHORT" : displayPOIs[0]?.type === "bullish" ? "LONG" : "SHORT"}
+              </Badge>
+            </h3>
+            
+            <div className="space-y-2">
+              {displayPOIs.map((poi) => (
               <Card key={poi.id} className={`p-3 ${
                 poi.type === "bullish" 
                   ? "border-success bg-success/10" 
@@ -415,9 +427,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </div>
               </Card>
             ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Fair Value Gaps */}
       {mtfData?.currentTimeframe?.fvgs && mtfData.currentTimeframe.fvgs.length > 0 && (
@@ -785,23 +798,35 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         </div>
       )}
 
-      {/* Active Signals */}
+      {/* Active Signals - Apenas 2 cards: melhor COMPRA + melhor VENDA */}
       <div className="p-4 flex-1">
-        <div className="flex items-center gap-2 mb-3">
-          <Target className="w-4 h-4 text-primary" />
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Sinais Ativos
-          </h3>
-          {signals.length > 0 && (
-            <Badge variant="default" className="animate-pulse text-[9px]">
-              {signals.length}
-            </Badge>
-          )}
-        </div>
-        
-        {signals.length > 0 ? (
-          <div className="space-y-3">
-            {signals.map((signal) => (
+        {(() => {
+          // Filtrar melhor sinal COMPRA e melhor sinal VENDA por R:R
+          const bestBuySignal = signals
+            .filter(s => s.type === "COMPRA")
+            .sort((a, b) => b.rr - a.rr)[0];
+          const bestSellSignal = signals
+            .filter(s => s.type === "VENDA")
+            .sort((a, b) => b.rr - a.rr)[0];
+          const displaySignals = [bestBuySignal, bestSellSignal].filter(Boolean);
+          
+          return (
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="w-4 h-4 text-primary" />
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Sinais Ativos
+                </h3>
+                {displaySignals.length > 0 && (
+                  <Badge variant="default" className="animate-pulse text-[9px]">
+                    {displaySignals.length > 1 ? "COMPRA + VENDA" : displaySignals[0]?.type}
+                  </Badge>
+                )}
+              </div>
+              
+              {displaySignals.length > 0 ? (
+                <div className="space-y-3">
+                  {displaySignals.map((signal) => (
               <Card
                 key={signal.id}
                 className={`p-3 border-2 ${
@@ -858,21 +883,24 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   Detectado às {signal.time}
                 </div>
               </Card>
-            ))}
-          </div>
-        ) : (
-          <Card className="p-4 bg-muted">
-            <div className="flex flex-col items-center justify-center text-center gap-2">
-              <Activity className="h-8 w-8 text-muted-foreground/50" />
-              <p className="text-xs text-muted-foreground">
-                Aguardando Setup com Confluência
-              </p>
-              <p className="text-[9px] text-muted-foreground/60">
-                POIs sendo monitorados em tempo real
-              </p>
-            </div>
-          </Card>
-        )}
+                  ))}
+                </div>
+              ) : (
+                <Card className="p-4 bg-muted">
+                  <div className="flex flex-col items-center justify-center text-center gap-2">
+                    <Activity className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="text-xs text-muted-foreground">
+                      Aguardando Setup com Confluência
+                    </p>
+                    <p className="text-[9px] text-muted-foreground/60">
+                      POIs sendo monitorados em tempo real
+                    </p>
+                  </div>
+                </Card>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Footer */}
