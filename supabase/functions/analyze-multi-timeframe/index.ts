@@ -744,10 +744,10 @@ function calculateDynamicTP(
     }
   }
   
-  // Se não encontrar swing adequado, usar RR conservador 1:2.5
+  // Se não encontrar swing adequado, usar RR conservador 1:3.5 (mínimo para atender checklist 3:1)
   const conservativeTP = type === "bullish" 
-    ? entry + (risk * 2.5)
-    : entry - (risk * 2.5);
+    ? entry + (risk * 3.5)
+    : entry - (risk * 3.5);
   
   const nearestSwing = type === "bullish"
     ? swings.filter(s => s.type === "high" && s.price > entry).sort((a, b) => a.price - b.price)[0]
@@ -755,7 +755,7 @@ function calculateDynamicTP(
   
   return {
     takeProfit: conservativeTP,
-    riskReward: 2.5,
+    riskReward: 3.5,
     targetSwing: nearestSwing ? {
       type: nearestSwing.type,
       price: nearestSwing.price,
