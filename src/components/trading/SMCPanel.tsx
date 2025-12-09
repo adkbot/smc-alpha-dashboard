@@ -736,6 +736,59 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               {mtfData.checklist.criteriaCount}/8 ✓
             </Badge>
           </div>
+
+          {/* BANNER VISUAL DE ZONA DE OPERAÇÃO */}
+          {realtimeStatus && (
+            <Card className={`p-3 mb-3 border-2 ${
+              realtimeStatus === "PREMIUM" 
+                ? "bg-destructive/20 border-destructive" 
+                : realtimeStatus === "DISCOUNT"
+                ? "bg-success/20 border-success"
+                : "bg-muted border-muted-foreground/30"
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className={`text-sm font-bold ${
+                    realtimeStatus === "PREMIUM" 
+                      ? "text-destructive" 
+                      : realtimeStatus === "DISCOUNT"
+                      ? "text-success"
+                      : "text-muted-foreground"
+                  }`}>
+                    {realtimeStatus === "PREMIUM" && "📉 ZONA PREMIUM - REGIÃO DE VENDA"}
+                    {realtimeStatus === "DISCOUNT" && "📈 ZONA DISCOUNT - REGIÃO DE COMPRA"}
+                    {realtimeStatus === "EQUILIBRIUM" && "⚖️ ZONA EQUILÍBRIO - AGUARDAR"}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    {realtimeStatus === "PREMIUM" && "💰 Preço está CARO - Momento ideal para VENDER"}
+                    {realtimeStatus === "DISCOUNT" && "💰 Preço está BARATO - Momento ideal para COMPRAR"}
+                    {realtimeStatus === "EQUILIBRIUM" && "Aguardar movimento para zona extrema"}
+                  </div>
+                </div>
+                <div className={`text-2xl font-bold ${
+                  realtimeStatus === "PREMIUM" 
+                    ? "text-destructive" 
+                    : realtimeStatus === "DISCOUNT"
+                    ? "text-success"
+                    : "text-muted-foreground"
+                }`}>
+                  {realtimeStatus === "PREMIUM" && "🔴"}
+                  {realtimeStatus === "DISCOUNT" && "🟢"}
+                  {realtimeStatus === "EQUILIBRIUM" && "⚪"}
+                </div>
+              </div>
+              {realtimePercentage !== null && (
+                <div className="text-[9px] text-muted-foreground mt-2 text-right">
+                  Posição no range: {realtimePercentage.toFixed(1)}%
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Princípio SMC */}
+          <div className="text-[9px] text-muted-foreground mb-3 text-center italic bg-muted/50 p-1.5 rounded">
+            💡 <span className="font-semibold">Princípio SMC:</span> Comprar BARATO (Discount), Vender CARO (Premium)
+          </div>
           
           <div className="grid grid-cols-2 gap-2 mb-3">
             {/* 1. Swings Mapeados */}
@@ -775,7 +828,12 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               ) : (
                 <XCircle className="h-3 w-3 text-destructive" />
               )}
-              <span>Zona: {mtfData.checklist.zoneName}</span>
+              <span>
+                Zona: {mtfData.checklist.zoneName} 
+                {mtfData.checklist.zoneName === "PREMIUM" && " (Venda) 🔴"}
+                {mtfData.checklist.zoneName === "DISCOUNT" && " (Compra) 🟢"}
+                {mtfData.checklist.zoneName === "EQUILIBRIUM" && " ⚪"}
+              </span>
             </div>
             
             {/* 5. Manipulação */}

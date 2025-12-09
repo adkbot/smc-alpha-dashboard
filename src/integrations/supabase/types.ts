@@ -2340,6 +2340,7 @@ export type Database = {
           leverage: number | null
           max_positions: number | null
           paper_mode: boolean | null
+          preferred_timeframe: string | null
           profit_target_percent: number | null
           risk_per_trade: number | null
           single_position_mode: boolean | null
@@ -2360,6 +2361,7 @@ export type Database = {
           leverage?: number | null
           max_positions?: number | null
           paper_mode?: boolean | null
+          preferred_timeframe?: string | null
           profit_target_percent?: number | null
           risk_per_trade?: number | null
           single_position_mode?: boolean | null
@@ -2380,6 +2382,7 @@ export type Database = {
           leverage?: number | null
           max_positions?: number | null
           paper_mode?: boolean | null
+          preferred_timeframe?: string | null
           profit_target_percent?: number | null
           risk_per_trade?: number | null
           single_position_mode?: boolean | null
