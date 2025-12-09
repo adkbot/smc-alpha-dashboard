@@ -84,6 +84,35 @@ export const BotControlPanel = () => {
         .maybeSingle();
 
       const binanceConnected = credentials?.test_status === "success";
+      const isRealMode = !settings?.paper_mode;
+      const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
+
+      // AUTO-PROTEÇÃO: Se bot está rodando em modo REAL mas Binance desconectou, PARAR automaticamente
+      if (currentBotStatus === "running" && isRealMode && !binanceConnected) {
+        console.log("🛑 Auto-proteção: Parando bot - Binance desconectada em modo REAL");
+        
+        await supabase
+          .from("user_settings")
+          .update({ bot_status: "stopped" })
+          .eq("user_id", user.id);
+        
+        toast({
+          title: "⚠️ Bot Parado Automaticamente",
+          description: "Conexão com Binance perdida. Reconecte para continuar em modo REAL.",
+          variant: "destructive",
+        });
+
+        setBotStatus({
+          status: "stopped",
+          lastAction: new Date().toLocaleTimeString(),
+          activePositions: 0,
+          todayTrades: 0,
+          paperMode: settings?.paper_mode ?? true,
+          binanceConnected: false,
+          autoTradingEnabled: settings?.auto_trading_enabled ?? false,
+        });
+        return;
+      }
 
       // Buscar posições ativas
       const { count: activeCount } = await supabase
@@ -98,11 +127,9 @@ export const BotControlPanel = () => {
         .select("id", { count: "exact" })
         .eq("user_id", user.id)
         .gte("entry_time", today);
-
-      const status = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
       
       setBotStatus({
-        status,
+        status: currentBotStatus,
         lastAction: new Date().toLocaleTimeString(),
         activePositions: activeCount || 0,
         todayTrades: tradesCount || 0,
@@ -335,9 +362,14 @@ export const BotControlPanel = () => {
       <div className="grid grid-cols-3 gap-2 mb-4">
         <Button
           onClick={startBot}
-          disabled={botStatus.status === "running" || loading}
+          disabled={
+            botStatus.status === "running" || 
+            loading || 
+            (!botStatus.paperMode && !botStatus.binanceConnected)
+          }
           size="sm"
           className="bg-success hover:bg-success/90"
+          title={!botStatus.paperMode && !botStatus.binanceConnected ? "Configure Binance primeiro" : ""}
         >
           {loading ? (
             <Loader2 className="w-4 h-4 mr-1 animate-spin" />
