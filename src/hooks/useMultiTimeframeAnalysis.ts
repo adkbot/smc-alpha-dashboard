@@ -270,18 +270,25 @@ export const useMultiTimeframeAnalysis = (
             },
           });
           
-          console.log("[AUTO-EXECUTE] Response:", JSON.stringify(response, null, 2));
-          
-          // When edge function returns 400, error will be set as FunctionsHttpError
-          // The actual error message is in response.error.context.body or similar
+          // When edge function returns non-2xx, error is FunctionsHttpError
+          // The actual error body must be read from response.response (raw Response object)
           if (response.error) {
-            // Try to extract error message from various possible locations
-            const err = response.error as any;
-            errorMessage = err?.context?.body?.error 
-              || err?.context?.error 
-              || err?.message 
-              || "Erro ao executar ordem";
-            console.warn("[AUTO-EXECUTE] Response error object:", err);
+            console.warn("[AUTO-EXECUTE] FunctionsHttpError detected");
+            
+            // Try to read the error body from the raw Response object
+            try {
+              const rawResponse = (response as any).response as Response | undefined;
+              if (rawResponse && typeof rawResponse.json === 'function') {
+                const errorBody = await rawResponse.json();
+                console.log("[AUTO-EXECUTE] Error body:", errorBody);
+                errorMessage = errorBody?.error || "Erro ao executar ordem";
+              } else {
+                errorMessage = response.error.message || "Erro ao executar ordem";
+              }
+            } catch (parseError) {
+              console.warn("[AUTO-EXECUTE] Could not parse error body:", parseError);
+              errorMessage = response.error.message || "Erro ao executar ordem";
+            }
           } 
           // Handle API error in response body (some 400 status codes return data with error)
           else if (response.data?.error) {
@@ -293,17 +300,7 @@ export const useMultiTimeframeAnalysis = (
           }
         } catch (invokeError: any) {
           console.warn("[AUTO-EXECUTE] Invoke exception:", invokeError);
-          // Handle FunctionsHttpError specifically
-          if (invokeError?.name === 'FunctionsHttpError') {
-            try {
-              const errBody = await invokeError.context?.json?.();
-              errorMessage = errBody?.error || invokeError.message || "Erro HTTP na função";
-            } catch {
-              errorMessage = invokeError.message || "Erro ao executar ordem";
-            }
-          } else {
-            errorMessage = invokeError?.message || "Erro de conexão";
-          }
+          errorMessage = invokeError?.message || "Erro de conexão";
         }
 
         // Show toast and exit gracefully if there's any error
