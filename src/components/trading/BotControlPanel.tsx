@@ -402,28 +402,70 @@ export const BotControlPanel = () => {
 
       {/* Aviso modo REAL */}
       {!botStatus.paperMode && (
-        <div className={`mb-4 p-2 rounded-md flex items-start gap-2 ${
+        <div className={`mb-4 p-2 rounded-md flex flex-col gap-2 ${
           botStatus.binanceConnected 
             ? 'bg-success/10 border border-success/30' 
             : 'bg-destructive/10 border border-destructive/30'
         }`}>
           {botStatus.binanceConnected ? (
-            <>
+            <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
               <p className="text-xs text-success">
                 <strong>Modo REAL ativo!</strong> Conectado à Binance. Operações serão executadas com dinheiro real.
               </p>
-            </>
+            </div>
           ) : (
             <>
-              <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-xs text-destructive font-bold">
-                  Modo REAL sem conexão!
-                </p>
-                <p className="text-xs text-destructive/80">
-                  Configure e teste suas credenciais Binance. Bot e Auto Trading bloqueados.
-                </p>
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-destructive font-bold">
+                    Modo REAL sem conexão!
+                  </p>
+                  <p className="text-xs text-destructive/80">
+                    Configure e teste suas credenciais Binance. Bot e Auto Trading bloqueados.
+                  </p>
+                </div>
+              </div>
+              {/* Botões de diagnóstico */}
+              <div className="flex gap-2 mt-1">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                  onClick={async () => {
+                    toast({
+                      title: "🔄 Retestando conexão...",
+                      description: "Abrindo configurações para retestar Binance.",
+                    });
+                    // Disparar evento para abrir settings
+                    window.dispatchEvent(new CustomEvent('open-settings', { detail: 'binance' }));
+                  }}
+                >
+                  🔄 Retestar Binance
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  className="h-7 text-xs"
+                  onClick={async () => {
+                    if (!user) return;
+                    const { error } = await supabase
+                      .from("user_settings")
+                      .update({ paper_mode: true })
+                      .eq("user_id", user.id);
+                    
+                    if (!error) {
+                      toast({
+                        title: "📄 Modo PAPER Ativado",
+                        description: "Sistema alternado para modo simulado.",
+                      });
+                      fetchBotStatus();
+                    }
+                  }}
+                >
+                  📄 Mudar para PAPER
+                </Button>
               </div>
             </>
           )}
