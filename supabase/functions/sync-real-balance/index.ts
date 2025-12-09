@@ -205,8 +205,9 @@ serve(async (req) => {
       }
 
       // IMPORTANTE: NÃO modificar test_status aqui - isso é responsabilidade do test-broker-connection
-      // Se FUTURES falhou mas SPOT pode funcionar, tentar fallback
-      if (account_type === 'futures' && balanceDetails.futuresError && !hasCredentialError) {
+      // Se FUTURES falhou, SEMPRE tentar SPOT como fallback (independente do tipo de erro)
+      let spotFallbackCredentialError = false;
+      if (account_type === 'futures' && balanceDetails.futuresError) {
         console.log('📊 FUTURES falhou, tentando SPOT como fallback...');
         try {
           const spotParams = `timestamp=${Date.now()}`;
@@ -224,14 +225,24 @@ serve(async (req) => {
             console.log('✅ SPOT fallback USDT Balance:', spotBalance);
             balanceDetails.spotFallback = true;
             balanceDetails.spot = { usdt: spotBalance };
+            // Se SPOT funcionou, limpar o erro de credenciais (era só problema de FUTURES)
+            hasCredentialError = false;
+          } else {
+            const errorData = await spotResponse.json();
+            const errorCode = errorData.code?.toString() || '';
+            console.error('❌ SPOT fallback também falhou:', errorData);
+            if (isCredentialError(errorCode)) {
+              spotFallbackCredentialError = true;
+            }
           }
         } catch (fallbackError) {
-          console.error('❌ SPOT fallback também falhou:', fallbackError);
+          console.error('❌ SPOT fallback erro:', fallbackError);
         }
       }
 
-      // Se há erro de credenciais em AMBOS, retornar erro mas SEM modificar test_status
-      if (hasCredentialError && spotBalance === 0 && futuresBalance === 0) {
+      // Só retornar erro de credenciais se AMBOS falharam (FUTURES + SPOT fallback)
+      const finalCredentialError = hasCredentialError && (spotFallbackCredentialError || spotBalance === 0);
+      if (finalCredentialError && spotBalance === 0 && futuresBalance === 0) {
         console.error('🚨 Credential error em todas as tentativas, retornando erro (sem modificar test_status)');
         return new Response(
           JSON.stringify({ 
