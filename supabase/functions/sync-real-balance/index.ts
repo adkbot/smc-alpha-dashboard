@@ -204,27 +204,42 @@ serve(async (req) => {
         }
       }
 
-      // If we have a credential error, DO NOT update balance and mark credentials as failed
-      if (hasCredentialError) {
-        console.error('🚨 Credential error detected, NOT updating balance');
-        
-        // Update credential status to failed
-        await supabaseClient
-          .from('user_api_credentials')
-          .update({ 
-            test_status: 'failed',
-            last_tested_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id)
-          .eq('broker_type', broker_type);
+      // IMPORTANTE: NÃO modificar test_status aqui - isso é responsabilidade do test-broker-connection
+      // Se FUTURES falhou mas SPOT pode funcionar, tentar fallback
+      if (account_type === 'futures' && balanceDetails.futuresError && !hasCredentialError) {
+        console.log('📊 FUTURES falhou, tentando SPOT como fallback...');
+        try {
+          const spotParams = `timestamp=${Date.now()}`;
+          const spotSignature = await createSignature(spotParams);
+          
+          const spotResponse = await fetch(
+            `https://api.binance.com/api/v3/account?${spotParams}&signature=${spotSignature}`,
+            { headers: { 'X-MBX-APIKEY': apiKey } }
+          );
 
+          if (spotResponse.ok) {
+            const spotData = await spotResponse.json();
+            const usdtBalance = spotData.balances?.find((b: any) => b.asset === 'USDT');
+            spotBalance = parseFloat(usdtBalance?.free || '0') + parseFloat(usdtBalance?.locked || '0');
+            console.log('✅ SPOT fallback USDT Balance:', spotBalance);
+            balanceDetails.spotFallback = true;
+            balanceDetails.spot = { usdt: spotBalance };
+          }
+        } catch (fallbackError) {
+          console.error('❌ SPOT fallback também falhou:', fallbackError);
+        }
+      }
+
+      // Se há erro de credenciais em AMBOS, retornar erro mas SEM modificar test_status
+      if (hasCredentialError && spotBalance === 0 && futuresBalance === 0) {
+        console.error('🚨 Credential error em todas as tentativas, retornando erro (sem modificar test_status)');
         return new Response(
           JSON.stringify({ 
             success: false,
             error: credentialErrorMessage,
             errorType: 'CREDENTIAL_ERROR',
             errorCode: credentialErrorCode,
-            message: `Erro de credenciais: ${credentialErrorMessage}. Reconfigure suas API Keys nas configurações.`,
+            message: `Erro de credenciais: ${credentialErrorMessage}. Verifique suas API Keys nas configurações.`,
           }),
           { 
             status: 401,
@@ -233,11 +248,12 @@ serve(async (req) => {
         );
       }
 
-      // Calculate total based on account type preference
+      // Calculate total - usar o que estiver disponível
       if (account_type === 'spot') {
         totalBalance = spotBalance;
       } else if (account_type === 'futures') {
-        totalBalance = futuresBalance;
+        // Se FUTURES falhou mas SPOT funcionou via fallback, usar SPOT
+        totalBalance = futuresBalance > 0 ? futuresBalance : spotBalance;
       } else {
         totalBalance = spotBalance + futuresBalance;
       }
@@ -246,7 +262,8 @@ serve(async (req) => {
         spotBalance,
         futuresBalance,
         totalBalance,
-        accountType: account_type
+        accountType: account_type,
+        usedFallback: balanceDetails.spotFallback || false
       });
 
     } else if (broker_type === 'forex') {
