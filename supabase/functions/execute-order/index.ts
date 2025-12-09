@@ -325,17 +325,23 @@ serve(async (req) => {
     let apiSecret = '';
     
     if (!settings.paper_mode) {
-      // Buscar credenciais da Binance
+      // Buscar credenciais da Binance COM STATUS DE VALIDAÇÃO
       const { data: credentials } = await supabase
         .from('user_api_credentials')
-        .select('encrypted_api_key, encrypted_api_secret')
+        .select('encrypted_api_key, encrypted_api_secret, test_status')
         .eq('user_id', user.id)
         .eq('broker_type', 'binance')
         .eq('is_active', true)
         .single();
 
       if (!credentials) {
-        throw new Error('Credenciais da Binance não configuradas');
+        throw new Error('Credenciais da Binance não configuradas. Configure em Configurações.');
+      }
+
+      // 🔒 VALIDAR QUE CREDENCIAIS ESTÃO TESTADAS COM SUCESSO
+      if (credentials.test_status !== 'success') {
+        console.log(`[EXECUTE-ORDER] ❌ Credenciais Binance não validadas: ${credentials.test_status}`);
+        throw new Error(`Credenciais Binance não validadas (status: ${credentials.test_status}). Teste sua conexão em Configurações.`);
       }
 
       // Decrypt credentials
