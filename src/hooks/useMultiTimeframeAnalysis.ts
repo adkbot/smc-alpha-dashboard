@@ -270,21 +270,40 @@ export const useMultiTimeframeAnalysis = (
             },
           });
           
-          // Handle Supabase invoke error (network issues, etc)
+          console.log("[AUTO-EXECUTE] Response:", JSON.stringify(response, null, 2));
+          
+          // When edge function returns 400, error will be set as FunctionsHttpError
+          // The actual error message is in response.error.context.body or similar
           if (response.error) {
-            errorMessage = response.error.message || JSON.stringify(response.error);
+            // Try to extract error message from various possible locations
+            const err = response.error as any;
+            errorMessage = err?.context?.body?.error 
+              || err?.context?.error 
+              || err?.message 
+              || "Erro ao executar ordem";
+            console.warn("[AUTO-EXECUTE] Response error object:", err);
           } 
-          // Handle API error in response body (400 status codes return data with error)
+          // Handle API error in response body (some 400 status codes return data with error)
           else if (response.data?.error) {
             errorMessage = typeof response.data.error === 'string' 
               ? response.data.error 
               : JSON.stringify(response.data.error);
-          } else {
+          } else if (response.data) {
             orderResult = response.data;
           }
         } catch (invokeError: any) {
           console.warn("[AUTO-EXECUTE] Invoke exception:", invokeError);
-          errorMessage = invokeError?.message || "Erro de conexão";
+          // Handle FunctionsHttpError specifically
+          if (invokeError?.name === 'FunctionsHttpError') {
+            try {
+              const errBody = await invokeError.context?.json?.();
+              errorMessage = errBody?.error || invokeError.message || "Erro HTTP na função";
+            } catch {
+              errorMessage = invokeError.message || "Erro ao executar ordem";
+            }
+          } else {
+            errorMessage = invokeError?.message || "Erro de conexão";
+          }
         }
 
         // Show toast and exit gracefully if there's any error
