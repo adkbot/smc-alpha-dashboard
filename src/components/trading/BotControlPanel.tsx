@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,9 @@ export const BotControlPanel = () => {
   });
   const [loading, setLoading] = useState(false);
   const [autoToggleLoading, setAutoToggleLoading] = useState(false);
+  
+  // Ref para evitar loop de proteção
+  const protectionApplied = useRef(false);
 
   const ensureUserSettings = async () => {
     if (!user) return null;
@@ -68,6 +71,31 @@ export const BotControlPanel = () => {
     return newSettings;
   };
 
+  // Função auxiliar para aplicar proteção com retry
+  const applyProtection = async (updates: Record<string, any>, message: string) => {
+    if (!user) return false;
+    
+    let retries = 3;
+    while (retries > 0) {
+      const { error } = await supabase
+        .from("user_settings")
+        .update(updates)
+        .eq("user_id", user.id);
+      
+      if (!error) {
+        console.log("✅ Proteção aplicada:", updates);
+        return true;
+      }
+      
+      console.error(`Erro ao aplicar proteção (tentativa ${4 - retries}/3):`, error);
+      retries--;
+      await new Promise(r => setTimeout(r, 500)); // Wait 500ms before retry
+    }
+    
+    console.error("❌ Falha ao aplicar proteção após 3 tentativas");
+    return false;
+  };
+
   const fetchBotStatus = async () => {
     if (!user) return;
 
@@ -88,54 +116,36 @@ export const BotControlPanel = () => {
       const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
       const autoTradingEnabled = settings?.auto_trading_enabled ?? false;
 
-      // 🛑 AUTO-PROTEÇÃO: Se bot está rodando em modo REAL mas Binance desconectou
-      if (currentBotStatus === "running" && isRealMode && !binanceConnected) {
-        console.log("🛑 Auto-proteção: Parando bot e desabilitando Auto Trading - Binance desconectada em modo REAL");
-        
-        // Parar bot E desabilitar auto trading
-        await supabase
-          .from("user_settings")
-          .update({ 
-            bot_status: "stopped",
-            auto_trading_enabled: false 
-          })
-          .eq("user_id", user.id);
-        
-        toast({
-          title: "⚠️ Bot Parado Automaticamente",
-          description: "Conexão com Binance perdida. Auto Trading desabilitado. Reconecte para continuar em modo REAL.",
-          variant: "destructive",
-        });
-
-        setBotStatus({
-          status: "stopped",
-          lastAction: new Date().toLocaleTimeString(),
-          activePositions: 0,
-          todayTrades: 0,
-          paperMode: settings?.paper_mode ?? true,
-          binanceConnected: false,
-          autoTradingEnabled: false, // Desabilitado automaticamente
-        });
-        return;
+      // Reset proteção se condições mudaram (modo PAPER ou Binance conectou)
+      if (!isRealMode || binanceConnected) {
+        protectionApplied.current = false;
       }
 
-      // 🛑 AUTO-PROTEÇÃO 2: Se Auto Trading está ligado mas Binance não está conectada em modo REAL
-      if (autoTradingEnabled && isRealMode && !binanceConnected) {
-        console.log("🛑 Auto-proteção: Desabilitando Auto Trading - Binance desconectada em modo REAL");
+      // 🛑 AUTO-PROTEÇÃO: Se condições exigem e proteção ainda não aplicada
+      const needsProtection = isRealMode && !binanceConnected && 
+        (currentBotStatus === "running" || autoTradingEnabled);
+      
+      if (needsProtection && !protectionApplied.current) {
+        protectionApplied.current = true; // Marcar antes para evitar loop
         
-        await supabase
-          .from("user_settings")
-          .update({ auto_trading_enabled: false })
-          .eq("user_id", user.id);
+        console.log("🛑 Auto-proteção: Parando bot e desabilitando Auto Trading");
         
-        toast({
-          title: "⚠️ Auto Trading Desabilitado",
-          description: "Conexão com Binance inválida. Configure suas credenciais.",
-          variant: "destructive",
-        });
-
+        const success = await applyProtection(
+          { bot_status: "stopped", auto_trading_enabled: false },
+          "proteção modo REAL sem Binance"
+        );
+        
+        if (success) {
+          toast({
+            title: "⚠️ Proteção Ativada",
+            description: "Bot parado e Auto Trading desabilitado. Configure Binance para modo REAL.",
+            variant: "destructive",
+          });
+        }
+        
+        // Forçar estado local independente do resultado do banco
         setBotStatus({
-          status: currentBotStatus,
+          status: "stopped",
           lastAction: new Date().toLocaleTimeString(),
           activePositions: 0,
           todayTrades: 0,
@@ -489,7 +499,7 @@ export const BotControlPanel = () => {
           </div>
           <Switch
             id="auto-trading"
-            checked={botStatus.autoTradingEnabled}
+            checked={isRealModeUnstable ? false : botStatus.autoTradingEnabled}
             onCheckedChange={toggleAutoTrading}
             disabled={autoToggleLoading || isRealModeUnstable}
           />
