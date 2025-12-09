@@ -22,9 +22,55 @@ import { useNavigate } from "react-router-dom";
 const Dashboard = () => {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [interval, setInterval] = useState("15m");
+  const [timeframeLoaded, setTimeframeLoaded] = useState(false);
   const { data: mtfData } = useMultiTimeframeAnalysis(symbol, interval);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+
+  // Carregar timeframe preferido do usuário
+  useEffect(() => {
+    const loadPreferredTimeframe = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: settings } = await supabase
+          .from('user_settings')
+          .select('preferred_timeframe')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (settings?.preferred_timeframe) {
+          setInterval(settings.preferred_timeframe);
+        }
+        setTimeframeLoaded(true);
+      } catch (error) {
+        console.error('Erro ao carregar timeframe preferido:', error);
+        setTimeframeLoaded(true);
+      }
+    };
+
+    loadPreferredTimeframe();
+  }, []);
+
+  // Salvar timeframe quando usuário mudar
+  const handleIntervalChange = async (newInterval: string) => {
+    setInterval(newInterval);
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('user_settings')
+        .upsert({ 
+          user_id: user.id, 
+          preferred_timeframe: newInterval 
+        }, { onConflict: 'user_id' });
+    } catch (error) {
+      console.error('Erro ao salvar timeframe preferido:', error);
+    }
+  };
 
   // Listener para mudanças de estado de autenticação
   useEffect(() => {
@@ -65,7 +111,7 @@ const Dashboard = () => {
         symbol={symbol}
         interval={interval}
         onSymbolChange={setSymbol}
-        onIntervalChange={setInterval}
+        onIntervalChange={handleIntervalChange}
       />
       
       <div className="flex-1 flex overflow-hidden">
