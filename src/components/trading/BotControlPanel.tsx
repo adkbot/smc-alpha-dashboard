@@ -103,15 +103,16 @@ export const BotControlPanel = () => {
       // Garantir que settings existe
       const settings = await ensureUserSettings();
 
-      // Buscar status das credenciais Binance
+      // Buscar status das credenciais Binance incluindo futures_ok
       const { data: credentials } = await supabase
         .from("user_api_credentials")
-        .select("test_status")
+        .select("test_status, futures_ok, spot_ok")
         .eq("user_id", user.id)
         .eq("broker_type", "binance")
         .maybeSingle();
 
       const binanceConnected = credentials?.test_status === "success";
+      const futuresOk = credentials?.futures_ok === true;
       const isRealMode = !settings?.paper_mode;
       const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
       const autoTradingEnabled = settings?.auto_trading_enabled ?? false;
@@ -122,7 +123,8 @@ export const BotControlPanel = () => {
       }
 
       // 🛑 AUTO-PROTEÇÃO: Se condições exigem e proteção ainda não aplicada
-      const needsProtection = isRealMode && !binanceConnected && 
+      // Em modo REAL, precisa ter FUTURES OK para operar
+      const needsProtection = isRealMode && (!binanceConnected || !futuresOk) && 
         (currentBotStatus === "running" || autoTradingEnabled);
       
       if (needsProtection && !protectionApplied.current) {
@@ -225,6 +227,24 @@ export const BotControlPanel = () => {
           toast({
             title: "Conexão não validada",
             description: "Teste sua conexão com a Binance em Configurações antes de iniciar o bot em modo REAL.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // 🔒 NOVA VALIDAÇÃO: Verificar permissão FUTURES específica
+        const { data: fullCredentials } = await supabase
+          .from("user_api_credentials")
+          .select("futures_ok")
+          .eq("user_id", user.id)
+          .eq("broker_type", "binance")
+          .maybeSingle();
+
+        if (!fullCredentials?.futures_ok) {
+          toast({
+            title: "❌ Permissão FUTURES necessária",
+            description: "Sua API Key não tem permissão para operar FUTURES. Habilite 'Enable Futures' na Binance API Management.",
             variant: "destructive",
           });
           setLoading(false);

@@ -325,10 +325,10 @@ serve(async (req) => {
     let apiSecret = '';
     
     if (!settings.paper_mode) {
-      // Buscar credenciais da Binance COM STATUS DE VALIDAÇÃO
+      // Buscar credenciais da Binance COM STATUS DE VALIDAÇÃO E PERMISSÃO FUTURES
       const { data: credentials } = await supabase
         .from('user_api_credentials')
-        .select('encrypted_api_key, encrypted_api_secret, test_status')
+        .select('encrypted_api_key, encrypted_api_secret, test_status, futures_ok')
         .eq('user_id', user.id)
         .eq('broker_type', 'binance')
         .eq('is_active', true)
@@ -343,6 +343,14 @@ serve(async (req) => {
         console.log(`[EXECUTE-ORDER] ❌ Credenciais Binance não validadas: ${credentials.test_status}`);
         throw new Error(`Credenciais Binance não validadas (status: ${credentials.test_status}). Teste sua conexão em Configurações.`);
       }
+
+      // 🔒 NOVA VALIDAÇÃO: Verificar permissão FUTURES específica
+      if (!credentials.futures_ok) {
+        console.log(`[EXECUTE-ORDER] ❌ Credenciais Binance sem permissão FUTURES`);
+        throw new Error('Sua API Key não tem permissão para operar FUTURES. Habilite "Enable Futures" na Binance API Management e teste novamente.');
+      }
+      
+      console.log(`[EXECUTE-ORDER] ✅ Credenciais validadas com permissão FUTURES`)
 
       // Decrypt credentials
       const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
