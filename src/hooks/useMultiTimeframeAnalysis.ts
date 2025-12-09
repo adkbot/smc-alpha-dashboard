@@ -251,7 +251,7 @@ export const useMultiTimeframeAnalysis = (
         console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
 
         let orderResult: any = null;
-        let error: any = null;
+        let errorMessage: string | null = null;
         
         try {
           const response = await supabase.functions.invoke("execute-order", {
@@ -269,28 +269,34 @@ export const useMultiTimeframeAnalysis = (
               checklist: checklist,
             },
           });
-          orderResult = response.data;
-          error = response.error;
+          
+          // Handle Supabase invoke error (network issues, etc)
+          if (response.error) {
+            errorMessage = response.error.message || JSON.stringify(response.error);
+          } 
+          // Handle API error in response body (400 status codes return data with error)
+          else if (response.data?.error) {
+            errorMessage = typeof response.data.error === 'string' 
+              ? response.data.error 
+              : JSON.stringify(response.data.error);
+          } else {
+            orderResult = response.data;
+          }
         } catch (invokeError: any) {
           console.warn("[AUTO-EXECUTE] Invoke exception:", invokeError);
-          error = invokeError;
+          errorMessage = invokeError?.message || "Erro de conexão";
         }
 
-        // Check for network errors, API errors (400 responses), or error in response body
-        const apiError = error || orderResult?.error;
-        
-        if (apiError) {
-          const errorMessage = typeof apiError === 'string' 
-            ? apiError 
-            : (apiError?.message || apiError?.error || JSON.stringify(apiError));
+        // Show toast and exit gracefully if there's any error
+        if (errorMessage) {
           console.warn("[AUTO-EXECUTE] Ordem bloqueada:", errorMessage);
           toast({
             title: "⚠️ Ordem não executada",
-            description: errorMessage,
+            description: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
             variant: "destructive",
           });
-          return; // Exit gracefully
-        } 
+          return; // Exit gracefully without crashing
+        }
         
         if (orderResult?.success) {
           lastExecutedSignalRef.current = signalId;
