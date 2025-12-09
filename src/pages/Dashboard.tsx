@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TradingChart } from "@/components/trading/TradingChart";
 import { AccountPanel } from "@/components/trading/AccountPanel";
 import { SMCPanel } from "@/components/trading/SMCPanel";
@@ -16,12 +16,33 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { PanelRight } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 const Dashboard = () => {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [interval, setInterval] = useState("15m");
   const { data: mtfData } = useMultiTimeframeAnalysis(symbol, interval);
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
+
+  // Listener para mudanças de estado de autenticação
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event);
+      
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('Token renovado com sucesso');
+      }
+      
+      if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
+        console.log('Sessão encerrada, redirecionando para login');
+        navigate('/auth');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
 
   const SidebarContent = () => (
     <div className="h-full overflow-y-auto pb-4 space-y-2">
