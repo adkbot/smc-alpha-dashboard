@@ -17,6 +17,8 @@ interface BotStatus {
   paperMode: boolean;
   binanceConnected: boolean;
   autoTradingEnabled: boolean;
+  futuresOk: boolean;
+  spotOk: boolean;
 }
 
 export const BotControlPanel = () => {
@@ -30,6 +32,8 @@ export const BotControlPanel = () => {
     paperMode: true,
     binanceConnected: false,
     autoTradingEnabled: false,
+    futuresOk: false,
+    spotOk: false,
   });
   const [loading, setLoading] = useState(false);
   const [autoToggleLoading, setAutoToggleLoading] = useState(false);
@@ -113,6 +117,7 @@ export const BotControlPanel = () => {
 
       const binanceConnected = credentials?.test_status === "success";
       const futuresOk = credentials?.futures_ok === true;
+      const spotOk = credentials?.spot_ok === true;
       const isRealMode = !settings?.paper_mode;
       const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
       const autoTradingEnabled = settings?.auto_trading_enabled ?? false;
@@ -154,6 +159,8 @@ export const BotControlPanel = () => {
           paperMode: settings?.paper_mode ?? true,
           binanceConnected: false,
           autoTradingEnabled: false,
+          futuresOk: false,
+          spotOk: false,
         });
         return;
       }
@@ -180,6 +187,8 @@ export const BotControlPanel = () => {
         paperMode: settings?.paper_mode ?? true,
         binanceConnected,
         autoTradingEnabled,
+        futuresOk,
+        spotOk,
       });
     } catch (error) {
       console.error("Erro ao buscar status do bot:", error);
@@ -386,8 +395,9 @@ export const BotControlPanel = () => {
     }
   };
 
-  // Verifica se modo REAL está instável (sem conexão)
-  const isRealModeUnstable = !botStatus.paperMode && !botStatus.binanceConnected;
+  // Verifica se modo REAL está instável (sem conexão ou sem FUTURES)
+  const isRealModeUnstable = !botStatus.paperMode && (!botStatus.binanceConnected || !botStatus.futuresOk);
+  const isFuturesMissing = !botStatus.paperMode && botStatus.binanceConnected && !botStatus.futuresOk;
 
   return (
     <Card className="p-4 m-4">
@@ -415,7 +425,9 @@ export const BotControlPanel = () => {
         <div className="mb-3">
           <Badge variant="destructive" className="w-full justify-center py-1">
             <ShieldAlert className="w-3 h-3 mr-1" />
-            ⚠️ Modo REAL Instável - Binance Desconectada
+            {isFuturesMissing 
+              ? "⚠️ FUTURES Desativado - Habilite nas permissões da API Binance"
+              : "⚠️ Modo REAL Instável - Binance Desconectada"}
           </Badge>
         </div>
       )}
@@ -587,12 +599,20 @@ export const BotControlPanel = () => {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Binance:</span>
-          <Badge 
-            variant="outline" 
-            className={`ml-2 ${botStatus.binanceConnected ? 'border-success text-success' : 'border-destructive text-destructive'}`}
-          >
-            {botStatus.binanceConnected ? "✓ Conectado" : "✗ Desconectado"}
-          </Badge>
+          <div className="flex gap-1 items-center">
+            <Badge 
+              variant="outline" 
+              className={`ml-2 text-[9px] px-1 ${botStatus.spotOk ? 'border-success/50 text-success' : 'border-muted text-muted-foreground'}`}
+            >
+              SPOT {botStatus.spotOk ? "✓" : "✗"}
+            </Badge>
+            <Badge 
+              variant="outline" 
+              className={`text-[9px] px-1 ${botStatus.futuresOk ? 'border-success text-success' : 'border-destructive text-destructive font-bold'}`}
+            >
+              FUTURES {botStatus.futuresOk ? "✓" : "✗"}
+            </Badge>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Posições Abertas:</span>
