@@ -6,11 +6,6 @@ import { TopBar } from "@/components/trading/TopBar";
 import { BotControlPanel } from "@/components/trading/BotControlPanel";
 import { ActivePositionsPanel } from "@/components/trading/ActivePositionsPanel";
 import { TradingLogsPanel } from "@/components/trading/TradingLogsPanel";
-import { VisionAgentPanel } from "@/components/vision/VisionAgentPanel";
-import { VisionAgentLogs } from "@/components/vision/VisionAgentLogs";
-import { VisionAgentVideos } from "@/components/vision/VisionAgentVideos";
-import { VisionAgentStrategies } from "@/components/vision/VisionAgentStrategies";
-import { VisionAgentSignals } from "@/components/vision/VisionAgentSignals";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -93,14 +88,9 @@ const Dashboard = () => {
   const SidebarContent = () => (
     <div className="h-full overflow-y-auto pb-4 space-y-2">
       <BotControlPanel />
-      <VisionAgentPanel />
-      <VisionAgentStrategies />
-      <VisionAgentSignals />
       <ActivePositionsPanel />
       <AccountPanel />
       <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
-      <VisionAgentLogs />
-      <VisionAgentVideos />
       <TradingLogsPanel />
     </div>
   );
