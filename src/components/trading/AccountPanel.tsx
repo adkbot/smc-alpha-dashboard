@@ -114,6 +114,22 @@ export const AccountPanel = () => {
   }, [user]);
 
   const syncRealBalance = useCallback(async () => {
+    // 🔒 VALIDAÇÃO 0: Verificar se sessão é válida
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      setSyncStatus("error");
+      setSyncError("Sessão expirada. Faça login novamente.");
+      shouldAutoSync.current = false;
+      
+      toast({
+        title: "🔐 Sessão Expirada",
+        description: "Por favor, faça logout e login novamente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // 🔒 VALIDAÇÃO 1: Verificar modo paper
     if (paperMode) {
       toast({
@@ -146,8 +162,24 @@ export const AccountPanel = () => {
         body: { broker_type: "binance", account_type: "futures" },
       });
 
-      // Handle function invocation error
+      // Handle function invocation error - check for 401
       if (error) {
+        // Verificar se é erro de autenticação (401)
+        if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
+          // Re-verificar sessão
+          const { data: { session: recheck } } = await supabase.auth.getSession();
+          if (!recheck) {
+            setSyncStatus("error");
+            setSyncError("Sessão expirada. Faça login novamente.");
+            shouldAutoSync.current = false;
+            toast({
+              title: "🔐 Sessão Expirada",
+              description: "Sua sessão expirou. Faça logout e login novamente.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
         throw new Error(error.message || "Erro de conexão com servidor");
       }
 
@@ -156,7 +188,7 @@ export const AccountPanel = () => {
         setSyncStatus("needs_configuration");
         setSyncError(data.message);
         setBinanceStatus("failed");
-        shouldAutoSync.current = false; // PARA loop de erros
+        shouldAutoSync.current = false;
         
         toast({
           title: "❌ Erro de Credenciais",
@@ -191,7 +223,7 @@ export const AccountPanel = () => {
         setSyncStatus("success");
         setSyncError(null);
         setLastSyncTime(new Date());
-        shouldAutoSync.current = true; // Restaura auto-sync
+        shouldAutoSync.current = true;
         
         const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
         const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
@@ -226,11 +258,21 @@ export const AccountPanel = () => {
   // Auto-sync quando em modo REAL com credenciais válidas (COM proteção contra loop)
   useEffect(() => {
     if (!paperMode && binanceStatus === "success" && user && shouldAutoSync.current) {
-      syncRealBalance();
+      // Verificar sessão antes de iniciar ciclo de sync
+      const checkSessionAndSync = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          shouldAutoSync.current = false;
+          return;
+        }
+        syncRealBalance();
+      };
+      
+      checkSessionAndSync();
       
       const syncInterval = setInterval(() => {
         if (shouldAutoSync.current) {
-          syncRealBalance();
+          checkSessionAndSync();
         }
       }, 30000);
       
