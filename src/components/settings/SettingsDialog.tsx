@@ -34,6 +34,8 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
   const [binanceKey, setBinanceKey] = useState("");
   const [binanceSecret, setBinanceSecret] = useState("");
   const [binanceStatus, setBinanceStatus] = useState<"success" | "failed" | "pending">("pending");
+  const [binanceFuturesOk, setBinanceFuturesOk] = useState(false);
+  const [binanceSpotOk, setBinanceSpotOk] = useState(false);
   
   // Forex API
   const [forexBroker, setForexBroker] = useState("metatrader");
@@ -70,13 +72,15 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
 
       const { data: credentials } = await supabase
         .from("user_api_credentials")
-        .select("broker_type, test_status, broker_name")
+        .select("broker_type, test_status, broker_name, futures_ok, spot_ok")
         .eq("user_id", user.id);
 
       if (credentials) {
         credentials.forEach((cred) => {
           if (cred.broker_type === "binance") {
             setBinanceStatus(cred.test_status as any || "pending");
+            setBinanceFuturesOk(cred.futures_ok === true);
+            setBinanceSpotOk(cred.spot_ok === true);
           } else if (cred.broker_type === "forex") {
             setForexStatus(cred.test_status as any || "pending");
             if (cred.broker_name) setForexBroker(cred.broker_name);
@@ -223,6 +227,10 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
 
       setBinanceStatus(data.status);
       
+      // Atualizar estado local com permissões SPOT/FUTURES
+      setBinanceFuturesOk(data.futuresOk === true);
+      setBinanceSpotOk(data.spotOk === true);
+      
       if (data.status === "success") {
         // BACKUP: Forçar update direto no banco para garantir que status foi salvo
         const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -230,7 +238,9 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           const { error: backupError } = await supabase
             .from("user_api_credentials")
             .update({ 
-              test_status: "success", 
+              test_status: "success",
+              futures_ok: data.futuresOk === true,
+              spot_ok: data.spotOk === true,
               last_tested_at: new Date().toISOString() 
             })
             .eq("user_id", currentUser.id)
@@ -243,10 +253,19 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           }
         }
 
-        toast({
-          title: "✅ Conexão bem-sucedida",
-          description: data.message,
-        });
+        // Mensagem diferente se FUTURES não está OK
+        if (data.futuresOk) {
+          toast({
+            title: "✅ Conexão bem-sucedida",
+            description: data.message,
+          });
+        } else {
+          toast({
+            title: "⚠️ Conexão parcial",
+            description: "SPOT funcionando, mas FUTURES não tem permissão. Habilite 'Enable Futures' na Binance.",
+            variant: "destructive",
+          });
+        }
 
         // Se não está em paper mode, sincronizar saldo automaticamente
         if (!paperMode) {
@@ -471,8 +490,43 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           <TabsContent value="binance" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium">Status da Conexão</h3>
-              <StatusBadge status={binanceStatus} />
+              <div className="flex gap-2 items-center">
+                <StatusBadge status={binanceStatus} />
+              </div>
             </div>
+
+            {/* Status detalhado SPOT/FUTURES */}
+            {binanceStatus === "success" && (
+              <div className="p-3 bg-secondary/30 rounded-md space-y-2 mb-4">
+                <p className="text-xs font-medium text-muted-foreground">Permissões da API:</p>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-1">
+                    {binanceSpotOk ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : (
+                      <X className="w-3 h-3 text-destructive" />
+                    )}
+                    <span className={`text-xs ${binanceSpotOk ? 'text-success' : 'text-muted-foreground'}`}>SPOT</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {binanceFuturesOk ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : (
+                      <X className="w-3 h-3 text-destructive" />
+                    )}
+                    <span className={`text-xs ${binanceFuturesOk ? 'text-success' : 'text-destructive font-bold'}`}>
+                      FUTURES {!binanceFuturesOk && '(NECESSÁRIO)'}
+                    </span>
+                  </div>
+                </div>
+                {!binanceFuturesOk && (
+                  <p className="text-xs text-destructive mt-2">
+                    ⚠️ Sua API Key não tem permissão FUTURES. O bot não poderá executar ordens.
+                    Habilite "Enable Futures" na Binance API Management.
+                  </p>
+                )}
+              </div>
+            )}
 
             {binanceStatus === "pending" && (
               <div className="p-3 bg-warning/10 border border-warning/30 rounded-md flex items-start gap-2">

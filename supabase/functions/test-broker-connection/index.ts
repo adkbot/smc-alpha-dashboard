@@ -247,11 +247,14 @@ serve(async (req) => {
 
     // Update test status in database with error checking
     console.log(`[TEST-CONNECTION] Salvando status no banco: ${testResult.status}`);
+    console.log(`[TEST-CONNECTION] SPOT OK: ${testResult.spotOk}, FUTURES OK: ${testResult.futuresOk}`);
     
     const { error: updateError, count } = await supabaseClient
       .from('user_api_credentials')
       .update({ 
         test_status: testResult.status,
+        spot_ok: testResult.spotOk,
+        futures_ok: testResult.futuresOk,
         last_tested_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)

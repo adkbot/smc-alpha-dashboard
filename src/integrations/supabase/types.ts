@@ -2088,9 +2088,11 @@ export type Database = {
           created_at: string | null
           encrypted_api_key: string | null
           encrypted_api_secret: string | null
+          futures_ok: boolean | null
           id: string
           is_active: boolean | null
           last_tested_at: string | null
+          spot_ok: boolean | null
           test_status: string | null
           updated_at: string | null
           user_id: string
@@ -2101,9 +2103,11 @@ export type Database = {
           created_at?: string | null
           encrypted_api_key?: string | null
           encrypted_api_secret?: string | null
+          futures_ok?: boolean | null
           id?: string
           is_active?: boolean | null
           last_tested_at?: string | null
+          spot_ok?: boolean | null
           test_status?: string | null
           updated_at?: string | null
           user_id: string
@@ -2114,9 +2118,11 @@ export type Database = {
           created_at?: string | null
           encrypted_api_key?: string | null
           encrypted_api_secret?: string | null
+          futures_ok?: boolean | null
           id?: string
           is_active?: boolean | null
           last_tested_at?: string | null
+          spot_ok?: boolean | null
           test_status?: string | null
           updated_at?: string | null
           user_id?: string
