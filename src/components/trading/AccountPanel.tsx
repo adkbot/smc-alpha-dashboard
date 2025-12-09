@@ -1,14 +1,14 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Wallet, Settings, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { TrendingUp, TrendingDown, Wallet, Settings, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, ShieldAlert } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
-type SyncStatus = "idle" | "syncing" | "success" | "error";
+type SyncStatus = "idle" | "syncing" | "success" | "error" | "needs_configuration";
 
 export const AccountPanel = () => {
   const { user } = useAuth();
@@ -22,6 +22,9 @@ export const AccountPanel = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [binanceStatus, setBinanceStatus] = useState<"success" | "failed" | "pending">("pending");
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  
+  // Ref para controlar se deve tentar auto-sync (evita loop de erros)
+  const shouldAutoSync = useRef(true);
 
   const ensureUserSettings = async () => {
     if (!user) return null;
@@ -74,8 +77,13 @@ export const AccountPanel = () => {
         .eq("broker_type", "binance")
         .maybeSingle();
 
-      if (credentials) {
-        setBinanceStatus(credentials.test_status as any || "pending");
+      const newBinanceStatus = (credentials?.test_status as any) || "pending";
+      setBinanceStatus(newBinanceStatus);
+      
+      // Se credenciais não são válidas, marcar como needs_configuration
+      if (newBinanceStatus !== "success" && !settings?.paper_mode) {
+        setSyncStatus("needs_configuration");
+        shouldAutoSync.current = false;
       }
 
       const today = new Date().toISOString().split('T')[0];
@@ -106,10 +114,25 @@ export const AccountPanel = () => {
   }, [user]);
 
   const syncRealBalance = useCallback(async () => {
+    // 🔒 VALIDAÇÃO 1: Verificar modo paper
     if (paperMode) {
       toast({
         title: "Modo Paper ativo",
         description: "Desative o Paper Mode nas configurações para sincronizar saldo real.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 🔒 VALIDAÇÃO 2: Verificar se credenciais estão validadas
+    if (binanceStatus !== "success") {
+      setSyncStatus("needs_configuration");
+      setSyncError("Credenciais não validadas");
+      shouldAutoSync.current = false;
+      
+      toast({
+        title: "⚠️ Credenciais Inválidas",
+        description: "Configure e teste suas credenciais Binance em Configurações.",
         variant: "destructive",
       });
       return;
@@ -130,9 +153,10 @@ export const AccountPanel = () => {
 
       // Check if response indicates an error
       if (data?.errorType === 'CREDENTIAL_ERROR') {
-        setSyncStatus("error");
+        setSyncStatus("needs_configuration");
         setSyncError(data.message);
         setBinanceStatus("failed");
+        shouldAutoSync.current = false; // PARA loop de erros
         
         toast({
           title: "❌ Erro de Credenciais",
@@ -146,6 +170,12 @@ export const AccountPanel = () => {
         const errorMsg = data.message || data.error || "Falha ao sincronizar";
         setSyncStatus("error");
         setSyncError(errorMsg);
+        
+        // Se for erro de credenciais, parar auto-sync
+        if (errorMsg.includes("credenciais") || errorMsg.includes("API") || errorMsg.includes("autenticação")) {
+          shouldAutoSync.current = false;
+          setSyncStatus("needs_configuration");
+        }
         
         toast({
           title: "⚠️ Erro ao sincronizar",
@@ -161,6 +191,7 @@ export const AccountPanel = () => {
         setSyncStatus("success");
         setSyncError(null);
         setLastSyncTime(new Date());
+        shouldAutoSync.current = true; // Restaura auto-sync
         
         const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
         const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
@@ -182,7 +213,7 @@ export const AccountPanel = () => {
         variant: "destructive",
       });
     }
-  }, [paperMode, toast]);
+  }, [paperMode, binanceStatus, toast]);
 
   const openSettings = () => setSettingsOpen(true);
 
@@ -192,13 +223,15 @@ export const AccountPanel = () => {
     return () => clearInterval(interval);
   }, [fetchAccountData]);
 
-  // Auto-sync quando em modo REAL com credenciais válidas
+  // Auto-sync quando em modo REAL com credenciais válidas (COM proteção contra loop)
   useEffect(() => {
-    if (!paperMode && binanceStatus === "success" && user) {
+    if (!paperMode && binanceStatus === "success" && user && shouldAutoSync.current) {
       syncRealBalance();
       
       const syncInterval = setInterval(() => {
-        syncRealBalance();
+        if (shouldAutoSync.current) {
+          syncRealBalance();
+        }
       }, 30000);
       
       return () => clearInterval(syncInterval);
@@ -210,6 +243,7 @@ export const AccountPanel = () => {
     if (paperMode) {
       setSyncStatus("idle");
       setSyncError(null);
+      shouldAutoSync.current = true; // Reset ao voltar para paper
     }
   }, [paperMode]);
 
@@ -223,11 +257,16 @@ export const AccountPanel = () => {
         return <CheckCircle className="w-3 h-3 text-success" />;
       case "error":
         return <XCircle className="w-3 h-3 text-destructive" />;
+      case "needs_configuration":
+        return <ShieldAlert className="w-3 h-3 text-destructive" />;
       default:
         return binanceStatus === "success" ? 
           <CheckCircle className="w-3 h-3 text-success" /> : null;
     }
   };
+
+  // Verifica se o botão de sync deve estar desabilitado
+  const isSyncDisabled = syncStatus === "syncing" || binanceStatus !== "success";
 
   return (
     <div className="p-4 border-b border-border bg-card/50">
@@ -245,10 +284,14 @@ export const AccountPanel = () => {
               variant="ghost" 
               className="h-7 w-7 p-0"
               onClick={syncRealBalance}
-              disabled={syncStatus === "syncing"}
-              title="Sincronizar saldo da Binance"
+              disabled={isSyncDisabled}
+              title={
+                binanceStatus !== "success" 
+                  ? "Configure credenciais Binance primeiro" 
+                  : "Sincronizar saldo da Binance"
+              }
             >
-              <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? 'animate-spin' : ''} ${isSyncDisabled && binanceStatus !== "success" ? 'text-muted-foreground' : ''}`} />
             </Button>
           )}
           <Button 
@@ -264,6 +307,16 @@ export const AccountPanel = () => {
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
 
+      {/* Badge de credenciais inválidas */}
+      {!paperMode && binanceStatus !== "success" && (
+        <div className="mb-3">
+          <Badge variant="destructive" className="w-full justify-center py-1">
+            <ShieldAlert className="w-3 h-3 mr-1" />
+            ⚠️ Credenciais Binance Inválidas
+          </Badge>
+        </div>
+      )}
+
       {/* Erro de sincronização */}
       {syncError && !paperMode && (
         <div className="mb-3 p-2 bg-destructive/10 border border-destructive/30 rounded-md">
@@ -271,7 +324,7 @@ export const AccountPanel = () => {
             <WifiOff className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <p className="text-xs text-destructive font-medium">
-                Erro de sincronização
+                {syncStatus === "needs_configuration" ? "Configuração Necessária" : "Erro de sincronização"}
               </p>
               <p className="text-xs text-destructive/80 mt-0.5">
                 {syncError}
@@ -285,12 +338,12 @@ export const AccountPanel = () => {
             onClick={openSettings}
           >
             <Settings className="w-3 h-3 mr-1" />
-            Verificar Configurações
+            {syncStatus === "needs_configuration" ? "Reconectar Binance" : "Verificar Configurações"}
           </Button>
         </div>
       )}
 
-      {/* Aviso se modo REAL sem credenciais validadas */}
+      {/* Aviso se modo REAL sem credenciais validadas (quando não há syncError) */}
       {!paperMode && binanceStatus !== "success" && !syncError && (
         <div className="mb-3 p-2 bg-destructive/10 border border-destructive/30 rounded-md flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
@@ -318,9 +371,9 @@ export const AccountPanel = () => {
             {getSyncIndicator()}
             <Badge 
               variant={paperMode ? "outline" : "default"} 
-              className={`text-xs ${!paperMode ? 'bg-success text-success-foreground' : ''}`}
+              className={`text-xs ${!paperMode ? (binanceStatus === "success" ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground') : ''}`}
             >
-              {paperMode ? "📄 Paper" : "💰 REAL"}
+              {paperMode ? "📄 Paper" : (binanceStatus === "success" ? "💰 REAL" : "⚠️ REAL")}
             </Badge>
           </div>
         </div>

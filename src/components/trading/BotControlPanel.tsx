@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2, Zap } from "lucide-react";
+import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2, Zap, ShieldAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -86,19 +86,24 @@ export const BotControlPanel = () => {
       const binanceConnected = credentials?.test_status === "success";
       const isRealMode = !settings?.paper_mode;
       const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
+      const autoTradingEnabled = settings?.auto_trading_enabled ?? false;
 
-      // AUTO-PROTEÇÃO: Se bot está rodando em modo REAL mas Binance desconectou, PARAR automaticamente
+      // 🛑 AUTO-PROTEÇÃO: Se bot está rodando em modo REAL mas Binance desconectou
       if (currentBotStatus === "running" && isRealMode && !binanceConnected) {
-        console.log("🛑 Auto-proteção: Parando bot - Binance desconectada em modo REAL");
+        console.log("🛑 Auto-proteção: Parando bot e desabilitando Auto Trading - Binance desconectada em modo REAL");
         
+        // Parar bot E desabilitar auto trading
         await supabase
           .from("user_settings")
-          .update({ bot_status: "stopped" })
+          .update({ 
+            bot_status: "stopped",
+            auto_trading_enabled: false 
+          })
           .eq("user_id", user.id);
         
         toast({
           title: "⚠️ Bot Parado Automaticamente",
-          description: "Conexão com Binance perdida. Reconecte para continuar em modo REAL.",
+          description: "Conexão com Binance perdida. Auto Trading desabilitado. Reconecte para continuar em modo REAL.",
           variant: "destructive",
         });
 
@@ -109,7 +114,34 @@ export const BotControlPanel = () => {
           todayTrades: 0,
           paperMode: settings?.paper_mode ?? true,
           binanceConnected: false,
-          autoTradingEnabled: settings?.auto_trading_enabled ?? false,
+          autoTradingEnabled: false, // Desabilitado automaticamente
+        });
+        return;
+      }
+
+      // 🛑 AUTO-PROTEÇÃO 2: Se Auto Trading está ligado mas Binance não está conectada em modo REAL
+      if (autoTradingEnabled && isRealMode && !binanceConnected) {
+        console.log("🛑 Auto-proteção: Desabilitando Auto Trading - Binance desconectada em modo REAL");
+        
+        await supabase
+          .from("user_settings")
+          .update({ auto_trading_enabled: false })
+          .eq("user_id", user.id);
+        
+        toast({
+          title: "⚠️ Auto Trading Desabilitado",
+          description: "Conexão com Binance inválida. Configure suas credenciais.",
+          variant: "destructive",
+        });
+
+        setBotStatus({
+          status: currentBotStatus,
+          lastAction: new Date().toLocaleTimeString(),
+          activePositions: 0,
+          todayTrades: 0,
+          paperMode: settings?.paper_mode ?? true,
+          binanceConnected: false,
+          autoTradingEnabled: false,
         });
         return;
       }
@@ -135,7 +167,7 @@ export const BotControlPanel = () => {
         todayTrades: tradesCount || 0,
         paperMode: settings?.paper_mode ?? true,
         binanceConnected,
-        autoTradingEnabled: settings?.auto_trading_enabled ?? false,
+        autoTradingEnabled,
       });
     } catch (error) {
       console.error("Erro ao buscar status do bot:", error);
@@ -284,6 +316,17 @@ export const BotControlPanel = () => {
 
   const toggleAutoTrading = async (enabled: boolean) => {
     if (!user) return;
+    
+    // 🔒 Bloquear ativação se modo REAL sem Binance conectada
+    if (enabled && !botStatus.paperMode && !botStatus.binanceConnected) {
+      toast({
+        title: "⚠️ Não é possível ativar Auto Trading",
+        description: "Configure e valide suas credenciais Binance primeiro.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setAutoToggleLoading(true);
 
     try {
@@ -313,6 +356,9 @@ export const BotControlPanel = () => {
     }
   };
 
+  // Verifica se modo REAL está instável (sem conexão)
+  const isRealModeUnstable = !botStatus.paperMode && !botStatus.binanceConnected;
+
   return (
     <Card className="p-4 m-4">
       <div className="flex items-center justify-between mb-4">
@@ -334,6 +380,16 @@ export const BotControlPanel = () => {
         </Badge>
       </div>
 
+      {/* Badge de estado instável */}
+      {isRealModeUnstable && (
+        <div className="mb-3">
+          <Badge variant="destructive" className="w-full justify-center py-1">
+            <ShieldAlert className="w-3 h-3 mr-1" />
+            ⚠️ Modo REAL Instável - Binance Desconectada
+          </Badge>
+        </div>
+      )}
+
       {/* Aviso modo REAL */}
       {!botStatus.paperMode && (
         <div className={`mb-4 p-2 rounded-md flex items-start gap-2 ${
@@ -351,9 +407,14 @@ export const BotControlPanel = () => {
           ) : (
             <>
               <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-destructive">
-                <strong>Modo REAL sem conexão!</strong> Configure e teste suas credenciais Binance.
-              </p>
+              <div className="flex-1">
+                <p className="text-xs text-destructive font-bold">
+                  Modo REAL sem conexão!
+                </p>
+                <p className="text-xs text-destructive/80">
+                  Configure e teste suas credenciais Binance. Bot e Auto Trading bloqueados.
+                </p>
+              </div>
             </>
           )}
         </div>
@@ -365,11 +426,11 @@ export const BotControlPanel = () => {
           disabled={
             botStatus.status === "running" || 
             loading || 
-            (!botStatus.paperMode && !botStatus.binanceConnected)
+            isRealModeUnstable
           }
           size="sm"
           className="bg-success hover:bg-success/90"
-          title={!botStatus.paperMode && !botStatus.binanceConnected ? "Configure Binance primeiro" : ""}
+          title={isRealModeUnstable ? "Configure Binance primeiro" : "Iniciar bot"}
         >
           {loading ? (
             <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -404,24 +465,39 @@ export const BotControlPanel = () => {
       <div className={`p-3 rounded-lg border-2 mb-4 ${
         botStatus.autoTradingEnabled 
           ? 'bg-accent/10 border-accent' 
+          : isRealModeUnstable
+          ? 'bg-destructive/5 border-destructive/30'
           : 'bg-muted border-border'
       }`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Zap className={`w-4 h-4 ${botStatus.autoTradingEnabled ? 'text-accent' : 'text-muted-foreground'}`} />
+            <Zap className={`w-4 h-4 ${
+              botStatus.autoTradingEnabled 
+                ? 'text-accent' 
+                : isRealModeUnstable 
+                ? 'text-destructive/50'
+                : 'text-muted-foreground'
+            }`} />
             <Label htmlFor="auto-trading" className="text-sm font-bold cursor-pointer">
               Auto Trading
             </Label>
+            {isRealModeUnstable && (
+              <Badge variant="outline" className="text-[9px] border-destructive/30 text-destructive">
+                BLOQUEADO
+              </Badge>
+            )}
           </div>
           <Switch
             id="auto-trading"
             checked={botStatus.autoTradingEnabled}
             onCheckedChange={toggleAutoTrading}
-            disabled={autoToggleLoading}
+            disabled={autoToggleLoading || isRealModeUnstable}
           />
         </div>
         <p className="text-[10px] text-muted-foreground mt-1">
-          {botStatus.autoTradingEnabled 
+          {isRealModeUnstable 
+            ? "⚠️ Configure credenciais Binance para habilitar Auto Trading"
+            : botStatus.autoTradingEnabled 
             ? "⚡ Executa ordens automaticamente quando Pre-List Trader Raiz é aprovada"
             : "🔒 Bot monitora mas não executa ordens automaticamente"}
         </p>
@@ -432,9 +508,9 @@ export const BotControlPanel = () => {
           <span className="text-muted-foreground">Modo:</span>
           <Badge 
             variant="outline" 
-            className={`ml-2 ${!botStatus.paperMode ? 'border-success text-success' : ''}`}
+            className={`ml-2 ${!botStatus.paperMode ? (botStatus.binanceConnected ? 'border-success text-success' : 'border-destructive text-destructive') : ''}`}
           >
-            {botStatus.paperMode ? "📄 PAPER" : "💰 REAL"}
+            {botStatus.paperMode ? "📄 PAPER" : (botStatus.binanceConnected ? "💰 REAL" : "⚠️ REAL")}
           </Badge>
         </div>
         <div className="flex items-center justify-between">
