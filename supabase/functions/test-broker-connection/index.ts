@@ -183,7 +183,7 @@ serve(async (req) => {
 
     console.log(`[TEST-CONNECTION] API Key length: ${apiKey.length}, Secret length: ${apiSecret.length}`);
 
-    let testResult = { status: 'failed', message: 'Erro desconhecido', details: '', spotOk: false, futuresOk: false };
+    let testResult: { status: string; message: string; details: string; spotOk: boolean; futuresOk: boolean; dbError?: string } = { status: 'failed', message: 'Erro desconhecido', details: '', spotOk: false, futuresOk: false };
 
     if (broker_type === 'binance') {
       // Testar AMBOS os endpoints (SPOT e FUTURES)
@@ -245,8 +245,10 @@ serve(async (req) => {
       };
     }
 
-    // Update test status in database
-    await supabaseClient
+    // Update test status in database with error checking
+    console.log(`[TEST-CONNECTION] Salvando status no banco: ${testResult.status}`);
+    
+    const { error: updateError, count } = await supabaseClient
       .from('user_api_credentials')
       .update({ 
         test_status: testResult.status,
@@ -255,7 +257,16 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .eq('broker_type', broker_type);
 
-    console.log(`[TEST-CONNECTION] Resultado final: ${testResult.status}`);
+    if (updateError) {
+      console.error('[TEST-CONNECTION] ❌ ERRO ao salvar status no banco:', updateError);
+      // Adicionar aviso ao response
+      testResult.message += '\n\n⚠️ Aviso: Status pode não ter sido salvo no banco. Tente novamente.';
+      testResult.dbError = updateError.message;
+    } else {
+      console.log(`[TEST-CONNECTION] ✅ Status salvo com sucesso: ${testResult.status}`);
+    }
+
+    console.log(`[TEST-CONNECTION] Resultado final: ${testResult.status}, dbError: ${updateError?.message || 'nenhum'}`);
 
     return new Response(
       JSON.stringify(testResult),

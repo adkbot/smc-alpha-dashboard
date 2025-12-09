@@ -224,6 +224,25 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       setBinanceStatus(data.status);
       
       if (data.status === "success") {
+        // BACKUP: Forçar update direto no banco para garantir que status foi salvo
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) {
+          const { error: backupError } = await supabase
+            .from("user_api_credentials")
+            .update({ 
+              test_status: "success", 
+              last_tested_at: new Date().toISOString() 
+            })
+            .eq("user_id", currentUser.id)
+            .eq("broker_type", "binance");
+          
+          if (backupError) {
+            console.error("[SettingsDialog] Erro no backup update:", backupError);
+          } else {
+            console.log("[SettingsDialog] ✅ Backup update do status executado com sucesso");
+          }
+        }
+
         toast({
           title: "✅ Conexão bem-sucedida",
           description: data.message,
