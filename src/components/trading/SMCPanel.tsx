@@ -50,8 +50,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         const distance = Math.abs(realtimePrice - poi.price) / poi.price;
         if (distance > 0.02) return false;
         
-        // RR mínimo de 3:1 (sincronizado com checklist Trader Raiz)
-        if (poi.riskReward < 3.0) return false;
+        // RR mínimo de 5:1 (ADKBOT - Trader Raiz)
+        if (poi.riskReward < 5.0) return false;
         
         return true;
       })
@@ -892,8 +892,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             </div>
             <div className="text-[9px] text-muted-foreground mt-1">
               {mtfData.checklist.riskRewardValid 
-                ? `R:R 1:${mtfData.checklist.riskRewardValue.toFixed(1)} ${mtfData.checklist.riskRewardValue >= 5 ? "(IDEAL)" : mtfData.checklist.riskRewardValue >= 3 ? "(OK)" : "(BAIXO)"}`
-                : "R:R < 3:1 - Mínimo não atingido"}
+                ? `R:R 1:${mtfData.checklist.riskRewardValue.toFixed(1)} ✅ (ADKBOT)`
+                : "R:R < 5:1 - Mínimo ADKBOT não atingido"}
             </div>
           </Card>
         </div>

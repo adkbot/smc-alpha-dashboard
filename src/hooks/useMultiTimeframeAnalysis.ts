@@ -78,7 +78,7 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// PRE-LIST TRADER RAIZ
+// PRE-LIST TRADER RAIZ - ADKBOT
 export interface TraderRaizChecklist {
   swingsMapped: boolean;
   swingsCount: number;
@@ -87,6 +87,7 @@ export interface TraderRaizChecklist {
   structureBroken: boolean;
   structureType: "BOS" | "CHOCH" | null;
   structurePrice: number | null;
+  bossConfirmado: boolean; // ADKBOT: BOSS confirmado com fechamento de candle
   zoneCorrect: boolean;
   zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
   zoneAligned: boolean;
@@ -95,6 +96,7 @@ export interface TraderRaizChecklist {
   orderBlockLocated: boolean;
   orderBlockRange: string;
   orderBlockStrength: number;
+  orderBlockEntry50: number | null; // ADKBOT: Entrada exata 50% do OB
   riskRewardValid: boolean;
   riskRewardValue: number;
   entryConfirmed: boolean;
@@ -201,9 +203,9 @@ export const useMultiTimeframeAnalysis = (
         return;
       }
       
-      // Verificar se há POI válido com R:R >= 3:1
-      if (!bestPOI || bestPOI.riskReward < 3.0) {
-        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 3:1 - ABORTANDO`);
+      // ADKBOT: Verificar se há POI válido com R:R >= 5:1
+      if (!bestPOI || bestPOI.riskReward < 5.0) {
+        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 5:1 - ABORTANDO (ADKBOT)`);
         return;
       }
       
