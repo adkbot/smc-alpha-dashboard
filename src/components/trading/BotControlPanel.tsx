@@ -142,12 +142,9 @@ export const BotControlPanel = () => {
           "proteção modo REAL sem Binance"
         );
         
+        // Proteção silenciosa - sem toast chato
         if (success) {
-          toast({
-            title: "⚠️ Proteção Ativada",
-            description: "Bot parado e Auto Trading desabilitado. Configure Binance para modo REAL.",
-            variant: "destructive",
-          });
+          console.log("⚠️ Proteção ativada silenciosamente");
         }
         
         // Forçar estado local independente do resultado do banco
@@ -171,13 +168,15 @@ export const BotControlPanel = () => {
         .select("id", { count: "exact" })
         .eq("user_id", user.id);
 
-      // Buscar trades de hoje
+      // Buscar trades de hoje (apenas executados com resultado WIN ou LOSS)
       const today = new Date().toISOString().split("T")[0];
       const { count: tradesCount } = await supabase
         .from("operations")
         .select("id", { count: "exact" })
         .eq("user_id", user.id)
-        .gte("entry_time", today);
+        .gte("entry_time", `${today}T00:00:00`)
+        .lte("entry_time", `${today}T23:59:59`)
+        .in("result", ["WIN", "LOSS"]); // Apenas operações realmente executadas
       
       setBotStatus({
         status: currentBotStatus,
@@ -307,11 +306,6 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
-      toast({
-        title: "🟡 Bot Pausado",
-        description: "Não entrará em novas posições",
-      });
-
       fetchBotStatus();
     } catch (error: any) {
       toast({
@@ -335,11 +329,6 @@ export const BotControlPanel = () => {
         .eq("user_id", user.id);
 
       if (error) throw error;
-
-      toast({
-        title: "🔴 Bot Parado",
-        description: "Sistema desativado",
-      });
 
       fetchBotStatus();
     } catch (error: any) {
@@ -375,13 +364,6 @@ export const BotControlPanel = () => {
         .eq("user_id", user.id);
 
       if (error) throw error;
-
-      toast({
-        title: enabled ? "⚡ Auto Trading ATIVADO" : "🔒 Auto Trading DESATIVADO",
-        description: enabled 
-          ? "Ordens serão executadas automaticamente quando Pre-List for aprovada"
-          : "Bot apenas monitora, sem execução automática",
-      });
 
       fetchBotStatus();
     } catch (error: any) {

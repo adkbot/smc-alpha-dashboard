@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 
 interface ActivePosition {
   id: string;
@@ -26,8 +26,77 @@ export const ActivePositionsPanel = () => {
   const { toast } = useToast();
   const [positions, setPositions] = useState<ActivePosition[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
-  const fetchPositions = async () => {
+  // Sincroniza posições do banco local com a Binance (verifica se ainda existem)
+  const syncPositionsWithBinance = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      // Buscar settings do usuário
+      const { data: settings } = await supabase
+        .from("user_settings")
+        .select("paper_mode")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      // Em modo paper, apenas buscar do banco
+      if (settings?.paper_mode) {
+        return;
+      }
+
+      // Buscar credenciais
+      const { data: credentials } = await supabase
+        .from("user_api_credentials")
+        .select("test_status, futures_ok")
+        .eq("user_id", user.id)
+        .eq("broker_type", "binance")
+        .maybeSingle();
+
+      // Se não tem credenciais válidas, não sincronizar
+      if (credentials?.test_status !== "success") {
+        return;
+      }
+
+      setSyncing(true);
+
+      // Chamar Edge Function para verificar posições na Binance
+      const { data: binancePositions, error } = await supabase.functions.invoke("sync-binance-positions", {
+        body: { user_id: user.id },
+      });
+
+      if (error) {
+        console.error("Erro ao sincronizar posições:", error);
+        return;
+      }
+
+      // Se a Binance não tem posições abertas, limpar as locais
+      if (binancePositions?.positions?.length === 0) {
+        // Buscar posições locais para deletar
+        const { data: localPositions } = await supabase
+          .from("active_positions")
+          .select("id")
+          .eq("user_id", user.id);
+
+        if (localPositions && localPositions.length > 0) {
+          // Deletar posições locais que não existem mais na Binance
+          for (const pos of localPositions) {
+            await supabase
+              .from("active_positions")
+              .delete()
+              .eq("id", pos.id);
+          }
+          console.log("✅ Posições locais limpas - não existem mais na Binance");
+        }
+      }
+    } catch (error) {
+      console.error("Erro na sincronização:", error);
+    } finally {
+      setSyncing(false);
+    }
+  }, [user]);
+
+  const fetchPositions = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -42,13 +111,21 @@ export const ActivePositionsPanel = () => {
     } catch (error) {
       console.error("Erro ao buscar posições:", error);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchPositions();
-    const interval = setInterval(fetchPositions, 5000);
+    // Sincronizar com Binance na primeira carga
+    syncPositionsWithBinance();
+    
+    const interval = setInterval(() => {
+      fetchPositions();
+      // Sincronizar com Binance a cada 30 segundos
+      syncPositionsWithBinance();
+    }, 30000);
+    
     return () => clearInterval(interval);
-  }, [user]);
+  }, [fetchPositions, syncPositionsWithBinance]);
 
   const closeManually = async (positionId: string, position: ActivePosition) => {
     setLoading(true);
@@ -65,7 +142,7 @@ export const ActivePositionsPanel = () => {
       if (error) throw error;
 
       toast({
-        title: "Posição fechada manualmente",
+        title: "Posição fechada",
         description: `${position.asset} - PnL: $${position.current_pnl.toFixed(2)}`,
       });
 
@@ -83,9 +160,12 @@ export const ActivePositionsPanel = () => {
 
   return (
     <Card className="p-4 m-4">
-      <h3 className="font-bold mb-3 text-foreground">
-        Posições Abertas ({positions.length})
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold text-foreground">
+          Posições Abertas ({positions.length})
+        </h3>
+        {syncing && <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />}
+      </div>
 
       <ScrollArea className="h-[90px]">
         {positions.map((pos) => {
@@ -107,9 +187,9 @@ export const ActivePositionsPanel = () => {
                   {pos.asset}
                 </Badge>
                 <Badge
-                  variant={pos.direction === "LONG" ? "default" : "destructive"}
+                  variant={pos.direction === "LONG" || pos.direction === "BUY" ? "default" : "destructive"}
                 >
-                  {pos.direction === "LONG" ? (
+                  {pos.direction === "LONG" || pos.direction === "BUY" ? (
                     <TrendingUp className="w-3 h-3 mr-1" />
                   ) : (
                     <TrendingDown className="w-3 h-3 mr-1" />
@@ -128,7 +208,7 @@ export const ActivePositionsPanel = () => {
                 <div>
                   <span className="text-muted-foreground">Atual:</span>
                   <span className="ml-1 font-mono text-foreground">
-                    ${pos.current_price.toFixed(2)}
+                    ${pos.current_price?.toFixed(2) || '---'}
                   </span>
                 </div>
                 <div>
@@ -153,7 +233,7 @@ export const ActivePositionsPanel = () => {
                       isProfitable ? "text-success" : "text-destructive"
                     }`}
                   >
-                    ${pos.current_pnl.toFixed(2)}
+                    ${pos.current_pnl?.toFixed(2) || '0.00'}
                   </span>
                   <span
                     className={`text-xs ml-1 ${

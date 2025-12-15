@@ -6,13 +6,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
 
 type SyncStatus = "idle" | "syncing" | "success" | "error" | "needs_configuration";
 
 export const AccountPanel = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
   const [balance, setBalance] = useState(0);
   const [pnl, setPnl] = useState(0);
   const [pnlPercent, setPnlPercent] = useState(0);
@@ -121,36 +119,19 @@ export const AccountPanel = () => {
       setSyncStatus("error");
       setSyncError("Sessão expirada. Faça login novamente.");
       shouldAutoSync.current = false;
-      
-      toast({
-        title: "🔐 Sessão Expirada",
-        description: "Por favor, faça logout e login novamente.",
-        variant: "destructive",
-      });
       return;
     }
 
-    // 🔒 VALIDAÇÃO 1: Verificar modo paper
+    // 🔒 VALIDAÇÃO 1: Verificar modo paper (silencioso)
     if (paperMode) {
-      toast({
-        title: "Modo Paper ativo",
-        description: "Desative o Paper Mode nas configurações para sincronizar saldo real.",
-        variant: "destructive",
-      });
       return;
     }
 
-    // 🔒 VALIDAÇÃO 2: Verificar se credenciais estão validadas
+    // 🔒 VALIDAÇÃO 2: Verificar se credenciais estão validadas (silencioso)
     if (binanceStatus !== "success") {
       setSyncStatus("needs_configuration");
       setSyncError("Credenciais não validadas");
       shouldAutoSync.current = false;
-      
-      toast({
-        title: "⚠️ Credenciais Inválidas",
-        description: "Configure e teste suas credenciais Binance em Configurações.",
-        variant: "destructive",
-      });
       return;
     }
 
@@ -162,21 +143,14 @@ export const AccountPanel = () => {
         body: { broker_type: "binance", account_type: "futures" },
       });
 
-      // Handle function invocation error - check for 401
+      // Handle function invocation error
       if (error) {
-        // Verificar se é erro de autenticação (401)
         if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
-          // Re-verificar sessão
           const { data: { session: recheck } } = await supabase.auth.getSession();
           if (!recheck) {
             setSyncStatus("error");
             setSyncError("Sessão expirada. Faça login novamente.");
             shouldAutoSync.current = false;
-            toast({
-              title: "🔐 Sessão Expirada",
-              description: "Sua sessão expirou. Faça logout e login novamente.",
-              variant: "destructive",
-            });
             return;
           }
         }
@@ -189,12 +163,6 @@ export const AccountPanel = () => {
         setSyncError(data.message);
         setBinanceStatus("failed");
         shouldAutoSync.current = false;
-        
-        toast({
-          title: "❌ Erro de Credenciais",
-          description: data.message,
-          variant: "destructive",
-        });
         return;
       }
 
@@ -203,49 +171,27 @@ export const AccountPanel = () => {
         setSyncStatus("error");
         setSyncError(errorMsg);
         
-        // Se for erro de credenciais, parar auto-sync
         if (errorMsg.includes("credenciais") || errorMsg.includes("API") || errorMsg.includes("autenticação")) {
           shouldAutoSync.current = false;
           setSyncStatus("needs_configuration");
         }
-        
-        toast({
-          title: "⚠️ Erro ao sincronizar",
-          description: errorMsg,
-          variant: "destructive",
-        });
         return;
       }
 
-      // Success case
+      // Success case - silencioso
       if (data?.success) {
         setBalance(data.balance);
         setSyncStatus("success");
         setSyncError(null);
         setLastSyncTime(new Date());
         shouldAutoSync.current = true;
-        
-        const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
-        const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
-        const accountInfo = [spotInfo, futuresInfo].filter(Boolean).join(' | ');
-        
-        toast({
-          title: "✅ Saldo Sincronizado",
-          description: `Total: $${data.balance.toFixed(2)}${accountInfo ? ` (${accountInfo})` : ''}`,
-        });
       }
     } catch (error: any) {
       console.error("Erro ao sincronizar saldo:", error);
       setSyncStatus("error");
       setSyncError(error.message || "Falha na conexão");
-      
-      toast({
-        title: "❌ Erro de conexão",
-        description: error.message || "Não foi possível conectar ao servidor",
-        variant: "destructive",
-      });
     }
-  }, [paperMode, binanceStatus, toast]);
+  }, [paperMode, binanceStatus]);
 
   const openSettings = () => setSettingsOpen(true);
 
