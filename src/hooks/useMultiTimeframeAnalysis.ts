@@ -78,27 +78,36 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// PRE-LIST TRADER RAIZ - ADKBOT
+// PRE-LIST TRADE RAIZ EVOLUÍDO - 5 CRITÉRIOS
 export interface TraderRaizChecklist {
+  // 5 critérios principais
+  sweepDetected: boolean;
+  sweepType: "sweep_low" | "sweep_high" | null;
+  sweepLevel: number | null;
+  structureConfirmed: boolean;
+  structureType: "BOS" | "CHOCH" | null;
+  structurePrice: number | null;
+  fvgPresent: boolean;
+  fvgType: "bullish" | "bearish" | null;
+  zoneCorrect: boolean;
+  zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
+  riskRewardValid: boolean;
+  riskRewardValue: number;
+  
+  // Legacy para compatibilidade
   swingsMapped: boolean;
   swingsCount: number;
   trendDefined: boolean;
   trendDirection: "ALTA" | "BAIXA" | "NEUTRO";
   structureBroken: boolean;
-  structureType: "BOS" | "CHOCH" | null;
-  structurePrice: number | null;
-  bossConfirmado: boolean; // ADKBOT: BOSS confirmado com fechamento de candle
-  zoneCorrect: boolean;
-  zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
+  bossConfirmado: boolean;
   zoneAligned: boolean;
   manipulationIdentified: boolean;
   manipulationZonesCount: number;
   orderBlockLocated: boolean;
   orderBlockRange: string;
   orderBlockStrength: number;
-  orderBlockEntry50: number | null; // ADKBOT: Entrada exata 50% do OB
-  riskRewardValid: boolean;
-  riskRewardValue: number;
+  orderBlockEntry50: number | null;
   entryConfirmed: boolean;
   criteriaCount: number;
   allCriteriaMet: boolean;
@@ -197,15 +206,15 @@ export const useMultiTimeframeAnalysis = (
       const checklist = data.checklist;
       const bestPOI = data.currentTimeframe.pois[0];
       
-      // REGRA TRADER RAIZ: Só executa se todos os 8 critérios forem satisfeitos
+      // TRADE RAIZ: Só executa se critérios forem satisfeitos (4 de 5)
       if (!checklist.allCriteriaMet) {
-        console.log(`[AUTO-EXECUTE] Pre-List: ${checklist.conclusion} (${checklist.criteriaCount}/8) - NÃO EXECUTAR`);
+        console.log(`[AUTO-EXECUTE] Pre-List: ${checklist.conclusion} (${checklist.criteriaCount}/5) - NÃO EXECUTAR`);
         return;
       }
       
-      // ADKBOT: Verificar se há POI válido com R:R >= 5:1
-      if (!bestPOI || bestPOI.riskReward < 5.0) {
-        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 5:1 - ABORTANDO (ADKBOT)`);
+      // TRADE RAIZ: Verificar se há POI válido com R:R >= 3:1
+      if (!bestPOI || bestPOI.riskReward < 3.0) {
+        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 3:1 - ABORTANDO`);
         return;
       }
       
@@ -250,7 +259,7 @@ export const useMultiTimeframeAnalysis = (
         console.log(`   SL: $${stopLoss.toFixed(2)}`);
         console.log(`   TP: $${takeProfit.toFixed(2)}`);
         console.log(`   R:R: 1:${riskReward.toFixed(2)}`);
-        console.log(`   Checklist: ${checklist.criteriaCount}/8 critérios`);
+        console.log(`   Checklist: ${checklist.criteriaCount}/5 critérios`);
 
         let orderResult: any = null;
         let errorMessage: string | null = null;

@@ -310,10 +310,10 @@ serve(async (req) => {
       throw new Error('Saldo insuficiente para operar (mínimo $10)');
     }
 
-    // 5. ADKBOT: Validar R:R mínimo de 5:1 (Metodologia ADKBOT)
-    if (risk_reward < 5.0) {
-      console.log(`[EXECUTE-ORDER] ⚠️ R:R ${risk_reward} abaixo do mínimo ADKBOT 5:1 - ABORTANDO`);
-      throw new Error(`R:R muito baixo (1:${risk_reward.toFixed(2)}). Mínimo ADKBOT: 1:5.0`);
+    // 5. TRADE RAIZ: Validar R:R mínimo de 3:1
+    if (risk_reward < 3.0) {
+      console.log(`[EXECUTE-ORDER] ⚠️ R:R ${risk_reward} abaixo do mínimo 3:1 - ABORTANDO`);
+      throw new Error(`R:R muito baixo (1:${risk_reward.toFixed(2)}). Mínimo: 1:3.0`);
     }
 
     // ========================================

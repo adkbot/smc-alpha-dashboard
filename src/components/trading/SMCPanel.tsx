@@ -43,15 +43,15 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
     
     return sortedPois
       .filter(poi => {
-        // Confluência mínima 70% (sincronizado com checklist)
-        if (poi.confluenceScore < 70) return false;
+        // Confluência mínima 60% (sincronizado com checklist)
+        if (poi.confluenceScore < 60) return false;
         
         // Preço próximo do POI (até 2% de distância)
         const distance = Math.abs(realtimePrice - poi.price) / poi.price;
         if (distance > 0.02) return false;
         
-        // RR mínimo de 5:1 (ADKBOT - Trader Raiz)
-        if (poi.riskReward < 5.0) return false;
+        // RR mínimo de 3:1 (Trade Raiz)
+        if (poi.riskReward < 3.0) return false;
         
         return true;
       })
@@ -733,7 +733,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 ? "bg-warning text-warning-foreground"
                 : "bg-destructive"
             }`}>
-              {mtfData.checklist.criteriaCount}/8 ✓
+              {mtfData.checklist.criteriaCount}/5 ✓
             </Badge>
           </div>
 
