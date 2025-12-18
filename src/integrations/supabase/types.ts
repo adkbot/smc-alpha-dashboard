@@ -440,6 +440,108 @@ export type Database = {
           },
         ]
       }
+      ia_learning_patterns: {
+        Row: {
+          created_at: string
+          id: string
+          losses: number
+          padrao_id: string
+          recompensa_acumulada: number
+          taxa_acerto: number
+          ultimo_uso: string | null
+          updated_at: string
+          user_id: string
+          vezes_testado: number
+          wins: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          losses?: number
+          padrao_id: string
+          recompensa_acumulada?: number
+          taxa_acerto?: number
+          ultimo_uso?: string | null
+          updated_at?: string
+          user_id: string
+          vezes_testado?: number
+          wins?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          losses?: number
+          padrao_id?: string
+          recompensa_acumulada?: number
+          taxa_acerto?: number
+          ultimo_uso?: string | null
+          updated_at?: string
+          user_id?: string
+          vezes_testado?: number
+          wins?: number
+        }
+        Relationships: []
+      }
+      ia_trade_context: {
+        Row: {
+          created_at: string
+          entry_price: number | null
+          exit_price: number | null
+          fvg_type: string | null
+          id: string
+          ob_strength: number | null
+          operation_id: string | null
+          padrao_combinado: string
+          pnl: number | null
+          resultado: string | null
+          rr_ratio: number | null
+          session_type: string | null
+          structure_type: string | null
+          sweep_type: string | null
+          user_id: string
+          volume_percentile: number | null
+          zone_type: string | null
+        }
+        Insert: {
+          created_at?: string
+          entry_price?: number | null
+          exit_price?: number | null
+          fvg_type?: string | null
+          id?: string
+          ob_strength?: number | null
+          operation_id?: string | null
+          padrao_combinado: string
+          pnl?: number | null
+          resultado?: string | null
+          rr_ratio?: number | null
+          session_type?: string | null
+          structure_type?: string | null
+          sweep_type?: string | null
+          user_id: string
+          volume_percentile?: number | null
+          zone_type?: string | null
+        }
+        Update: {
+          created_at?: string
+          entry_price?: number | null
+          exit_price?: number | null
+          fvg_type?: string | null
+          id?: string
+          ob_strength?: number | null
+          operation_id?: string | null
+          padrao_combinado?: string
+          pnl?: number | null
+          resultado?: string | null
+          rr_ratio?: number | null
+          session_type?: string | null
+          structure_type?: string | null
+          sweep_type?: string | null
+          user_id?: string
+          volume_percentile?: number | null
+          zone_type?: string | null
+        }
+        Relationships: []
+      }
       learning_runs_2025_11_29_14_39: {
         Row: {
           accuracy_percentage: number | null
@@ -2336,6 +2438,7 @@ export type Database = {
           bot_status: string | null
           cooldown_disabled_until: string | null
           created_at: string | null
+          ia_learning_enabled: boolean | null
           id: string
           leverage: number | null
           max_positions: number | null
@@ -2357,6 +2460,7 @@ export type Database = {
           bot_status?: string | null
           cooldown_disabled_until?: string | null
           created_at?: string | null
+          ia_learning_enabled?: boolean | null
           id?: string
           leverage?: number | null
           max_positions?: number | null
@@ -2378,6 +2482,7 @@ export type Database = {
           bot_status?: string | null
           cooldown_disabled_until?: string | null
           created_at?: string | null
+          ia_learning_enabled?: boolean | null
           id?: string
           leverage?: number | null
           max_positions?: number | null

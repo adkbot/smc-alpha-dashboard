@@ -128,6 +128,15 @@ interface CurrentTimeframeAnalysis extends BOSCHOCHData {
   pois: POI[];
 }
 
+// IA Learning Data
+export interface IALearningData {
+  padraoId: string;
+  taxaAcerto: number;
+  vezesTestado: number;
+  confianca: "ALTA" | "MEDIA" | "BAIXA" | "NEUTRO";
+  ajusteAplicado: string;
+}
+
 export interface MTFAnalysis {
   symbol: string;
   timestamp: string;
@@ -140,6 +149,7 @@ export interface MTFAnalysis {
   currentTimeframe: CurrentTimeframeAnalysis;
   checklist: TraderRaizChecklist;
   allTimeframes: TimeframeAnalysis[];
+  iaLearning?: IALearningData | null;
 }
 
 const DEFAULT_TIMEFRAMES = ["1d", "4h", "1h", "30m", "15m", "5m", "1m"];
@@ -161,13 +171,23 @@ export const useMultiTimeframeAnalysis = (
       setLoading(true);
       setError(null);
 
+      // Obter userId para consulta de IA
+      let userId: string | null = null;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        userId = user?.id || null;
+      } catch {
+        // Se não conseguir obter usuário, continua sem IA
+      }
+
       const { data: result, error: funcError } = await supabase.functions.invoke(
         "analyze-multi-timeframe",
         {
           body: { 
             symbol, 
             timeframes,
-            currentTimeframe 
+            currentTimeframe,
+            userId, // Passar userId para consulta de aprendizado IA
           },
         }
       );
