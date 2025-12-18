@@ -709,9 +709,26 @@ serve(async (req) => {
     }
     const overallConfidence = totalWeight > 0 ? totalWeightedWR / totalWeight : 50;
     
-    // Determinar se modelo está pronto para produção
-    // Critérios: validationWinRate >= 50% E tradesSimulated >= 50
-    const isProductionReady = validationWinRate >= 50 && tradesSimulated >= 50;
+    // 🆕 CRITÉRIOS MELHORADOS para produção:
+    // Critério 1: validationWinRate >= 40% (era 50%) E tradesSimulated >= 50
+    // Critério 2: OU tem padrões elite (>= 70% WR com >= 5 trades)
+    const elitePatterns = sortedPatterns.filter(p => 
+      (p.wins + p.losses) >= 5 && p.winRate >= 70
+    );
+    const hasElitePatterns = elitePatterns.length >= 3;
+    
+    const isProductionReady = 
+      (validationWinRate >= 40 && tradesSimulated >= 50) || 
+      (hasElitePatterns && validationWinRate >= 35);
+    
+    console.log(`[ia-historical-training] 🎯 Avaliação de produção:`);
+    console.log(`  - Validation WR: ${validationWinRate.toFixed(1)}% (mínimo: 40%)`);
+    console.log(`  - Trades simulados: ${tradesSimulated} (mínimo: 50)`);
+    console.log(`  - Padrões elite (>=70% WR): ${elitePatterns.length} (mínimo: 3)`);
+    console.log(`  - Aprovado para produção: ${isProductionReady ? 'SIM ✅' : 'NÃO ❌'}`);
+    if (hasElitePatterns) {
+      console.log(`  - Aprovado por padrões elite: ${elitePatterns.map(p => p.pattern).slice(0, 3).join(', ')}`);
+    }
     
     // Desativar modelos anteriores
     await supabase

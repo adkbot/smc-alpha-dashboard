@@ -329,6 +329,22 @@ serve(async (req) => {
     console.log(`[EXECUTE-ORDER] ${direction} ${asset} @ ${entry_price}`);
     console.log(`[EXECUTE-ORDER] SL: ${stop_loss} | TP: ${take_profit} | R:R: 1:${risk_reward}`);
 
+    // 🆕 VALIDAÇÃO DE ENTRY_PRICE (corrigir entry_price = 0)
+    if (!entry_price || entry_price <= 0 || isNaN(entry_price)) {
+      console.log(`[EXECUTE-ORDER] ❌ Entry price inválido: ${entry_price}`);
+      throw new Error(`Entry price inválido (${entry_price}). Não é possível abrir posição com preço 0 ou negativo.`);
+    }
+    
+    if (!stop_loss || stop_loss <= 0 || isNaN(stop_loss)) {
+      console.log(`[EXECUTE-ORDER] ❌ Stop loss inválido: ${stop_loss}`);
+      throw new Error(`Stop loss inválido (${stop_loss}). Valor obrigatório.`);
+    }
+    
+    if (!take_profit || take_profit <= 0 || isNaN(take_profit)) {
+      console.log(`[EXECUTE-ORDER] ❌ Take profit inválido: ${take_profit}`);
+      throw new Error(`Take profit inválido (${take_profit}). Valor obrigatório.`);
+    }
+
     // VALIDAR CHECKLIST TRADER RAIZ (8 CRITÉRIOS)
     if (checklist) {
       console.log(`[EXECUTE-ORDER] Validando Pre-List Trader Raiz...`);
@@ -396,8 +412,29 @@ serve(async (req) => {
       console.log(`[IA-LEARNING] Recompensa acumulada: ${learnedPattern.recompensa_acumulada?.toFixed(2) || 0}`);
       console.log(`[IA-LEARNING] 🎯 PATTERN SCORE: ${patternScore.toFixed(1)}/100 (Confidence: ${patternConfidence.toFixed(2)})`);
       
-      // 🆕 FILTRO HOLD: Se PatternScore < 80, NÃO executa (espera setup melhor)
-      if (learnedPattern.vezes_testado >= 5 && patternScore < MIN_PATTERN_SCORE) {
+      // 🆕 BLOQUEAR ABSOLUTO: Se WR = 0% com >= 2 trades, NUNCA executar
+      if (winRate === 0 && learnedPattern.vezes_testado >= 2) {
+        console.log(`[IA-LEARNING] 🚫 BLOQUEIO ABSOLUTO! WR 0% com ${learnedPattern.vezes_testado} trades`);
+        
+        await supabase.from('agent_logs').insert({
+          user_id: user.id,
+          agent_name: 'IA_ZERO_WR_BLOCK',
+          status: 'BLOCKED_ABSOLUTE',
+          asset,
+          data: {
+            pattern: currentPattern,
+            patternScore,
+            winRate: 0,
+            trades: learnedPattern.vezes_testado,
+            reason: 'Zero win rate pattern - absolute block',
+          },
+        });
+        
+        throw new Error(`IA: Padrão "${currentPattern}" com 0% WR em ${learnedPattern.vezes_testado} trades. BLOQUEIO ABSOLUTO.`);
+      }
+      
+      // 🆕 FILTRO HOLD: Se >= 3 trades (era 5) e PatternScore < 80, NÃO executa
+      if (learnedPattern.vezes_testado >= 3 && patternScore < MIN_PATTERN_SCORE) {
         console.log(`[IA-LEARNING] ⏸️ HOLD! PatternScore ${patternScore.toFixed(0)} < ${MIN_PATTERN_SCORE}`);
         
         await supabase.from('agent_logs').insert({
@@ -423,8 +460,8 @@ serve(async (req) => {
       else if (patternScore >= 60) setupConfidence += 15;
       else if (patternScore >= 40) setupConfidence += 5;
       
-      // 🚫 BLOQUEAR se win rate < 35% E pelo menos 5 trades históricos (padrão muito ruim)
-      if (winRate < 35 && learnedPattern.vezes_testado >= 5) {
+      // 🚫 BLOQUEAR se win rate < 35% E pelo menos 3 trades históricos (era 5)
+      if (winRate < 35 && learnedPattern.vezes_testado >= 3) {
         console.log(`[IA-LEARNING] ❌ BLOQUEADO! Padrão com histórico muito ruim`);
         
         await supabase.from('agent_logs').insert({
