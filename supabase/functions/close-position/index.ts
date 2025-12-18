@@ -104,6 +104,19 @@ function getTradingSession(): string {
   return 'NY';
 }
 
+// 🧠 PATTERN SCORE PROFISSIONAL (0-100) - NÍVEL TRADER HUMANO
+function calculatePatternScore(
+  taxaAcerto: number, 
+  vezesTestado: number, 
+  recompensaAcumulada: number
+): number {
+  const winRateFactor = taxaAcerto * 0.6;
+  const sampleSizeFactor = Math.min(vezesTestado / 20, 1) * 20;
+  const avgReward = vezesTestado > 0 ? recompensaAcumulada / vezesTestado : 0;
+  const rrFactor = Math.min(Math.max(avgReward, 0) / 2, 1) * 20;
+  return Math.min(winRateFactor + sampleSizeFactor + rrFactor, 100);
+}
+
 // ==================== SISTEMA IA EVOLUTIVA COM REPLAY BUFFER ====================
 
 interface TradeContext {
@@ -128,12 +141,13 @@ interface RewardBreakdown {
   drawdown: number;
 }
 
-// 🎯 REWARD FUNCTION AVANÇADA (NÍVEL HUMANO)
+// 🎯 REWARD FUNCTION AVANÇADA COM PATTERN CONFIDENCE (NÍVEL HUMANO)
 function calculateAdvancedReward(
   resultado: 'WIN' | 'LOSS',
   pnl: number,
   rrAchieved: number,
-  contexto: TradeContext
+  contexto: TradeContext,
+  patternConfidence: number = 0.5  // 🆕 0.0 a 1.0
 ): RewardBreakdown {
   // 1️⃣ PNL BASE (40% do peso)
   const pnlReward = resultado === 'WIN' ? 1.0 : -1.0;
@@ -170,8 +184,18 @@ function calculateAdvancedReward(
   let drawdownPenalty = 0;
   if (contexto.obStrength && contexto.obStrength < 30) drawdownPenalty -= 0.3;
   
-  // REWARD FINAL
-  const totalReward = pnlReward + (resultado === 'WIN' ? disciplineBonus + contextBonus : 0) + penalties + drawdownPenalty;
+  // 🆕 6️⃣ PATTERN CONFIDENCE MULTIPLIER
+  // Fórmula: reward *= (0.8 + patternConfidence)
+  // Se patternConfidence = 0.90 → multiplica por 1.70 (Elite!)
+  // Se patternConfidence = 0.60 → multiplica por 1.40 (Bom)
+  // Se patternConfidence = 0.30 → multiplica por 1.10 (Quase neutro)
+  const confidenceMultiplier = 0.8 + patternConfidence;
+  
+  // REWARD FINAL COM MULTIPLICADOR DE CONFIANÇA
+  let totalReward = pnlReward + (resultado === 'WIN' ? disciplineBonus + contextBonus : 0) + penalties + drawdownPenalty;
+  totalReward *= confidenceMultiplier;
+  
+  console.log(`[IA-REWARD] 📊 Confidence Multiplier: ${confidenceMultiplier.toFixed(2)}x (patternConf: ${patternConfidence.toFixed(2)})`);
   
   return {
     total: totalReward,
@@ -228,8 +252,27 @@ async function aplicarRecompensa(
     // Calcular RR atingido
     const rrAchieved = resultado === 'WIN' ? operationData.rrTarget : 0;
     
-    // 🎯 CALCULAR REWARD AVANÇADO
-    const rewardBreakdown = calculateAdvancedReward(resultado, operationData.pnl, rrAchieved, contexto);
+    // 🆕 BUSCAR PATTERN ATUAL PARA CALCULAR CONFIDENCE
+    let patternConfidence = 0.5; // Base
+    const { data: existingPatternForScore } = await supabase
+      .from('ia_learning_patterns')
+      .select('taxa_acerto, vezes_testado, recompensa_acumulada')
+      .eq('user_id', userId)
+      .eq('padrao_id', padraoId)
+      .maybeSingle();
+    
+    if (existingPatternForScore && existingPatternForScore.vezes_testado >= 3) {
+      const patternScore = calculatePatternScore(
+        existingPatternForScore.taxa_acerto || 50,
+        existingPatternForScore.vezes_testado,
+        existingPatternForScore.recompensa_acumulada || 0
+      );
+      patternConfidence = patternScore / 100;
+      console.log(`[IA-LEARNING] 🎯 PatternScore para reward: ${patternScore.toFixed(1)} (Confidence: ${patternConfidence.toFixed(2)})`);
+    }
+    
+    // 🎯 CALCULAR REWARD AVANÇADO COM PATTERN CONFIDENCE
+    const rewardBreakdown = calculateAdvancedReward(resultado, operationData.pnl, rrAchieved, contexto, patternConfidence);
     const scores = calculateScores(contexto, rrAchieved);
     
     console.log(`[IA-LEARNING] 🧠 Aplicando recompensa avançada:`);
