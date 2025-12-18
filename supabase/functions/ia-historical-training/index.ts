@@ -676,6 +676,86 @@ serve(async (req) => {
     // Calcular win rate da validação
     const validationWinRate = validationTrades > 0 ? (validationWins / validationTrades) * 100 : 0;
 
+    // ========== SALVAR MODELO EM ia_model_weights ==========
+    console.log(`[ia-historical-training] Salvando modelo treinado em ia_model_weights...`);
+    
+    // Construir pattern_weights (Q-values por padrão)
+    const patternWeights: Record<string, { qValue: number; winRate: number; trades: number }> = {};
+    for (const [pattern, data] of patternRewards) {
+      const total = data.wins + data.losses;
+      const wr = total > 0 ? (data.wins / total) * 100 : 50;
+      patternWeights[pattern] = {
+        qValue: data.reward,
+        winRate: wr,
+        trades: total,
+      };
+    }
+    
+    // Identificar padrões congelados (>= 10 trades E WR >= 60%)
+    const frozenPatterns = sortedPatterns
+      .filter(p => (p.wins + p.losses) >= 10 && p.winRate >= 60)
+      .map(p => p.pattern);
+    
+    // Calcular confiança geral (média ponderada pelo número de trades)
+    let totalWeightedWR = 0;
+    let totalWeight = 0;
+    for (const [_, data] of patternRewards) {
+      const total = data.wins + data.losses;
+      if (total >= 3) {
+        const wr = (data.wins / total) * 100;
+        totalWeightedWR += wr * total;
+        totalWeight += total;
+      }
+    }
+    const overallConfidence = totalWeight > 0 ? totalWeightedWR / totalWeight : 50;
+    
+    // Determinar se modelo está pronto para produção
+    // Critérios: validationWinRate >= 50% E tradesSimulated >= 50
+    const isProductionReady = validationWinRate >= 50 && tradesSimulated >= 50;
+    
+    // Desativar modelos anteriores
+    await supabase
+      .from('ia_model_weights')
+      .update({ is_current: false })
+      .eq('user_id', userId)
+      .eq('is_current', true);
+    
+    // Salvar novo modelo
+    const { data: savedModel, error: modelError } = await supabase
+      .from('ia_model_weights')
+      .insert({
+        user_id: userId,
+        version: 1,
+        is_current: true,
+        is_production: isProductionReady,
+        model_name: `RL_Model_${new Date().toISOString().split('T')[0]}`,
+        pattern_weights: patternWeights,
+        frozen_patterns: frozenPatterns,
+        confidence_level: overallConfidence,
+        train_trades: tradesSimulated,
+        train_winrate: winRate,
+        validation_trades: validationTrades,
+        validation_winrate: validationWinRate,
+        training_config: {
+          symbol,
+          timeframes: TIMEFRAMES,
+          trainingRatio: 0.8,
+          minSetupScore: 40,
+          minPatternTrades: 3,
+        },
+      })
+      .select()
+      .single();
+    
+    if (modelError) {
+      console.error(`[ia-historical-training] Erro ao salvar modelo:`, modelError);
+    } else {
+      console.log(`[ia-historical-training] ✅ Modelo salvo com sucesso!`);
+      console.log(`  - Confiança: ${overallConfidence.toFixed(1)}%`);
+      console.log(`  - Pronto para produção: ${isProductionReady ? 'SIM' : 'NÃO'}`);
+      console.log(`  - Padrões congelados: ${frozenPatterns.length}`);
+    }
+
     const report = {
       success: true,
       metrics: {
@@ -693,6 +773,12 @@ serve(async (req) => {
         winRate: validationWinRate.toFixed(1),
         tradesValidated: validationTrades
       },
+      model: {
+        confidence: overallConfidence.toFixed(1),
+        isProductionReady,
+        frozenPatterns: frozenPatterns.length,
+        modelId: savedModel?.id || null,
+      },
       topPatterns: topPatterns.map(p => ({
         pattern: p.pattern,
         winRate: p.winRate.toFixed(1),
@@ -703,7 +789,7 @@ serve(async (req) => {
         winRate: p.winRate.toFixed(1),
         trades: p.wins + p.losses
       })),
-      message: `Treinamento concluído! ${patternsLearned.size} padrões aprendidos com ${tradesSimulated} trades simulados (${winRate.toFixed(1)}% WR). Validação: ${validationWins}W/${validationLosses}L (${validationWinRate.toFixed(1)}% WR)`
+      message: `Treinamento concluído! ${patternsLearned.size} padrões aprendidos com ${tradesSimulated} trades simulados (${winRate.toFixed(1)}% WR). Validação: ${validationWins}W/${validationLosses}L (${validationWinRate.toFixed(1)}% WR). Modelo ${isProductionReady ? 'APROVADO' : 'em treinamento'}.`
     };
 
     console.log(`[ia-historical-training] Concluído:`, report.message);

@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database, Trophy, Sparkles } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database, Trophy, Sparkles, Activity } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -36,9 +36,29 @@ interface PreTrainingReport {
     winRate: string;
     tradesValidated: number;
   };
+  model?: {
+    confidence: string;
+    isProductionReady: boolean;
+    frozenPatterns: number;
+  };
   topPatterns: { pattern: string; winRate: string; trades: number }[];
   worstPatterns: { pattern: string; winRate: string; trades: number }[];
   message: string;
+}
+
+interface RealOperationsStats {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalPnL: number;
+}
+
+interface ModelStatus {
+  isProduction: boolean;
+  confidence: number;
+  trainWinRate: number;
+  validationWinRate: number;
 }
 
 export const IALearningPanel = () => {
@@ -53,9 +73,74 @@ export const IALearningPanel = () => {
   const [preTrainingProgress, setPreTrainingProgress] = useState(0);
   const [preTrainingReport, setPreTrainingReport] = useState<PreTrainingReport | null>(null);
   const [trainingComplete, setTrainingComplete] = useState(false);
+  
+  // Real operations stats
+  const [realStats, setRealStats] = useState<RealOperationsStats>({
+    totalTrades: 0,
+    wins: 0,
+    losses: 0,
+    winRate: 0,
+    totalPnL: 0,
+  });
+  
+  // Model status
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+
+  // Fetch real operations stats
+  const fetchRealOperationsStats = useCallback(async (userId: string) => {
+    try {
+      const { data: operations } = await supabase
+        .from('operations')
+        .select('result, pnl')
+        .eq('user_id', userId)
+        .in('result', ['WIN', 'LOSS']);
+
+      if (operations && operations.length > 0) {
+        const wins = operations.filter(op => op.result === 'WIN').length;
+        const losses = operations.filter(op => op.result === 'LOSS').length;
+        const totalPnL = operations.reduce((sum, op) => sum + (op.pnl || 0), 0);
+        const winRate = operations.length > 0 ? (wins / operations.length) * 100 : 0;
+
+        setRealStats({
+          totalTrades: operations.length,
+          wins,
+          losses,
+          winRate,
+          totalPnL,
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao buscar operações reais:', error);
+    }
+  }, []);
+
+  // Fetch model status
+  const fetchModelStatus = useCallback(async (userId: string) => {
+    try {
+      const { data: model } = await supabase
+        .from('ia_model_weights')
+        .select('is_production, confidence_level, train_winrate, validation_winrate')
+        .eq('user_id', userId)
+        .eq('is_current', true)
+        .single();
+
+      if (model) {
+        setModelStatus({
+          isProduction: model.is_production || false,
+          confidence: model.confidence_level || 50,
+          trainWinRate: model.train_winrate || 0,
+          validationWinRate: model.validation_winrate || 0,
+        });
+        setTrainingComplete(true);
+      }
+    } catch (error) {
+      // Modelo ainda não existe
+      setModelStatus(null);
+    }
+  }, []);
 
   // Fetch IA learning data
-  const fetchIAData = async () => {
+  const fetchIAData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -87,18 +172,24 @@ export const IALearningPanel = () => {
           setNivelConfianca(avgTaxa);
         }
       }
+
+      // Buscar stats reais e status do modelo
+      await Promise.all([
+        fetchRealOperationsStats(user.id),
+        fetchModelStatus(user.id),
+      ]);
     } catch (error) {
       console.error('Erro ao buscar dados IA:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchRealOperationsStats, fetchModelStatus]);
 
   useEffect(() => {
     fetchIAData();
     const interval = setInterval(fetchIAData, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchIAData]);
 
   // Executar treinamento manual
   const runTraining = async () => {
@@ -247,16 +338,16 @@ export const IALearningPanel = () => {
   return (
     <Card className="p-4 border-border bg-card">
       {/* Alerta de Treinamento Completo */}
-      {trainingComplete && preTrainingReport && (
-        <Alert className="mb-4 border-success bg-success/10 animate-pulse">
-          <Trophy className="h-5 w-5 text-success" />
-          <AlertTitle className="text-success font-bold flex items-center gap-2">
+      {trainingComplete && modelStatus && (
+        <Alert className={`mb-4 ${modelStatus.isProduction ? 'border-success bg-success/10' : 'border-warning bg-warning/10'}`}>
+          <Trophy className={`h-5 w-5 ${modelStatus.isProduction ? 'text-success' : 'text-warning'}`} />
+          <AlertTitle className={`${modelStatus.isProduction ? 'text-success' : 'text-warning'} font-bold flex items-center gap-2`}>
             <Sparkles className="w-4 h-4" />
-            IA TREINADA COM SUCESSO!
+            {modelStatus.isProduction ? 'IA PRONTA PARA PRODUÇÃO!' : 'IA EM TREINAMENTO'}
           </AlertTitle>
-          <AlertDescription className="text-success/90">
-            A IA aprendeu {preTrainingReport.metrics.patternsLearned} padrões com {preTrainingReport.metrics.winRate}% de Win Rate.
-            O sistema agora opera com conhecimento pré-treinado!
+          <AlertDescription className={`${modelStatus.isProduction ? 'text-success/90' : 'text-warning/90'}`}>
+            Confiança: {modelStatus.confidence.toFixed(1)}% | Validação: {modelStatus.validationWinRate.toFixed(1)}% WR
+            {!modelStatus.isProduction && ' (precisa validação >= 50%)'}
           </AlertDescription>
         </Alert>
       )}
@@ -268,9 +359,9 @@ export const IALearningPanel = () => {
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider">
             IA Evolutiva
           </h3>
-          {trainingComplete && (
-            <Badge variant="default" className="bg-success text-success-foreground text-xs animate-bounce">
-              TREINADA ✓
+          {modelStatus?.isProduction && (
+            <Badge variant="default" className="bg-success text-success-foreground text-xs">
+              PRODUÇÃO ✓
             </Badge>
           )}
         </div>
@@ -315,7 +406,7 @@ export const IALearningPanel = () => {
               {preTrainingProgress < 30 && 'Buscando klines históricos...'}
               {preTrainingProgress >= 30 && preTrainingProgress < 60 && 'Analisando padrões SMC...'}
               {preTrainingProgress >= 60 && preTrainingProgress < 90 && 'Simulando trades...'}
-              {preTrainingProgress >= 90 && 'Salvando aprendizado...'}
+              {preTrainingProgress >= 90 && 'Salvando modelo...'}
             </p>
           </div>
         ) : preTrainingReport ? (
@@ -363,25 +454,63 @@ export const IALearningPanel = () => {
         )}
       </div>
 
-      {/* Contagem WINS/LOSSES Proeminente */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        <div className="bg-success/20 rounded-lg p-3 text-center border border-success/30">
-          <TrendingUp className="w-5 h-5 text-success mx-auto mb-1" />
-          <p className="text-2xl font-bold text-success">{totalWins}</p>
-          <p className="text-xs text-success/80">WINS</p>
+      {/* DADOS SIMULADOS (Treinamento) */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Database className="w-3 h-3 text-muted-foreground" />
+          <span className="text-xs font-semibold text-muted-foreground">Dados Simulados (Treinamento)</span>
         </div>
-        <div className="bg-destructive/20 rounded-lg p-3 text-center border border-destructive/30">
-          <TrendingDown className="w-5 h-5 text-destructive mx-auto mb-1" />
-          <p className="text-2xl font-bold text-destructive">{totalLosses}</p>
-          <p className="text-xs text-destructive/80">LOSSES</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-success/20 rounded-lg p-2 text-center border border-success/30">
+            <TrendingUp className="w-4 h-4 text-success mx-auto mb-1" />
+            <p className="text-xl font-bold text-success">{totalWins}</p>
+            <p className="text-xs text-success/80">WINS</p>
+          </div>
+          <div className="bg-destructive/20 rounded-lg p-2 text-center border border-destructive/30">
+            <TrendingDown className="w-4 h-4 text-destructive mx-auto mb-1" />
+            <p className="text-xl font-bold text-destructive">{totalLosses}</p>
+            <p className="text-xs text-destructive/80">LOSSES</p>
+          </div>
         </div>
+      </div>
+
+      {/* DADOS REAIS (Operações) */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Activity className="w-3 h-3 text-accent" />
+          <span className="text-xs font-semibold text-accent">Operações Reais</span>
+        </div>
+        {realStats.totalTrades > 0 ? (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-background/50 rounded-lg p-2 text-center border border-border">
+              <p className="text-lg font-bold text-success">{realStats.wins}</p>
+              <p className="text-xs text-muted-foreground">Wins</p>
+            </div>
+            <div className="bg-background/50 rounded-lg p-2 text-center border border-border">
+              <p className="text-lg font-bold text-destructive">{realStats.losses}</p>
+              <p className="text-xs text-muted-foreground">Losses</p>
+            </div>
+            <div className="bg-background/50 rounded-lg p-2 text-center border border-border">
+              <p className={`text-lg font-bold ${realStats.totalPnL >= 0 ? 'text-success' : 'text-destructive'}`}>
+                ${realStats.totalPnL.toFixed(2)}
+              </p>
+              <p className="text-xs text-muted-foreground">PnL</p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-muted/30 rounded-lg p-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              Nenhuma operação real finalizada ainda
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Validação Pós-Treinamento */}
       {preTrainingReport?.validation && (
         <Alert className="mb-4 border-accent bg-accent/10">
           <CheckCircle className="h-4 w-4 text-accent" />
-          <AlertTitle className="text-accent text-sm">Validação com IA Treinada (20% dados)</AlertTitle>
+          <AlertTitle className="text-accent text-sm">Validação (20% dados)</AlertTitle>
           <AlertDescription className="text-accent/90 text-xs">
             <span className="font-bold">{preTrainingReport.validation.wins}W</span> / <span className="font-bold">{preTrainingReport.validation.losses}L</span> 
             {' '}({preTrainingReport.validation.winRate}% WR em {preTrainingReport.validation.tradesValidated} trades)
@@ -407,7 +536,7 @@ export const IALearningPanel = () => {
           />
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Baseado em {totalTrades} trades ({totalWins}W / {totalLosses}L)
+          Baseado em {totalTrades} trades simulados ({totalWins}W / {totalLosses}L)
         </p>
       </div>
 
@@ -471,22 +600,13 @@ export const IALearningPanel = () => {
         </div>
       )}
 
-      {/* Indicador de Status */}
-      {patterns.length === 0 && !preTrainingReport ? (
-        <div className="text-center py-4">
-          <Zap className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-xs text-muted-foreground">
-            Use o Pré-Treinamento ou aguarde os primeiros trades
-          </p>
+      {/* Footer - Padrões monitorados */}
+      <div className="pt-2 border-t border-border">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Zap className="w-3 h-3" />
+          <span className="text-xs">IA monitorando {patterns.length} padrões</span>
         </div>
-      ) : (
-        <div className="flex items-center justify-center gap-2 py-2 border-t border-border">
-          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-          <span className="text-xs text-muted-foreground">
-            IA monitorando {patterns.length} padrões
-          </span>
-        </div>
-      )}
+      </div>
     </Card>
   );
 };
