@@ -78,8 +78,30 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
+// 🆕 CAMADA 1: CONTEXT ENGINE
+export interface TradingContext {
+  ready: boolean;
+  bias: "BULL" | "BEAR" | "RANGE" | null;
+  biasStrength: "FORTE" | "MODERADO" | "FRACO";
+  rangeHigh: number;
+  rangeLow: number;
+  session: "OCEANIA" | "ASIA" | "LONDON" | "NY";
+}
+
+// 🆕 CAMADA 3: DECISION ENGINE
+export interface TradeDecision {
+  execute: boolean;
+  reason: string;
+  confluenceScore: number;
+  patternScore: number;
+  combinedScore: number;
+}
+
 // PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE
 export interface TraderRaizChecklist {
+  // 🆕 CONTEXTO (Camada 1)
+  context: TradingContext;
+  
   // 5 critérios principais (para UI)
   sweepDetected: boolean;
   sweepType: "sweep_low" | "sweep_high" | null;
@@ -116,6 +138,9 @@ export interface TraderRaizChecklist {
   confluencePercentage: number;
   confluenceFactors: string[];
   
+  // 🆕 DECISION ENGINE (Camada 3)
+  decision: TradeDecision;
+
   criteriaCount: number;
   allCriteriaMet: boolean;
   conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
@@ -257,15 +282,25 @@ export const useMultiTimeframeAnalysis = (
       const checklist = data.checklist;
       const bestPOI = data.currentTimeframe.pois[0];
       
-      // 🆕 CONFLUENCE SCORE: Log detalhado
-      console.log(`[AUTO-EXECUTE] Confluence Score: ${checklist.confluenceScore?.toFixed(1) || 0}/${checklist.confluenceMaxScore || 10} (${checklist.confluencePercentage?.toFixed(0) || 0}%)`);
-      if (checklist.confluenceFactors?.length > 0) {
-        console.log(`[AUTO-EXECUTE] Fatores: ${checklist.confluenceFactors.join(', ')}`);
+      // 🆕 CAMADA 1: VERIFICAR CONTEXTO
+      if (!checklist.context?.ready) {
+        console.log(`[AUTO-EXECUTE] ⏸️ Contexto não definido - AGUARDAR`);
+        return;
       }
       
-      // CONFLUENCE: Só executa se score >= 6.0 (60%)
-      if (!checklist.allCriteriaMet) {
-        console.log(`[AUTO-EXECUTE] Confluência insuficiente: ${checklist.confluenceScore?.toFixed(1) || 0}/10 - ${checklist.conclusion}`);
+      console.log(`[AUTO-EXECUTE] 🔷 CONTEXTO: Bias=${checklist.context.bias} | Strength=${checklist.context.biasStrength} | Session=${checklist.context.session}`);
+      
+      // 🆕 CAMADA 2: Log dos setups detectados
+      console.log(`[AUTO-EXECUTE] 🔷 SETUPS: Sweep=${checklist.sweepDetected} | FVG=${checklist.fvgPresent} | Structure=${checklist.structureConfirmed} | Zone=${checklist.zoneName}`);
+      
+      // 🆕 CAMADA 3: DECISION ENGINE
+      const decision = checklist.decision;
+      console.log(`[AUTO-EXECUTE] 🔷 DECISION: ${decision.reason}`);
+      console.log(`[AUTO-EXECUTE]    Confluence: ${decision.confluenceScore.toFixed(1)}/10 | Pattern: ${decision.patternScore}/100 | Combined: ${decision.combinedScore.toFixed(0)}/100`);
+      
+      // 🆕 Usar DECISION ENGINE em vez de allCriteriaMet
+      if (!decision.execute) {
+        console.log(`[AUTO-EXECUTE] ⏸️ Decision Engine: NÃO EXECUTAR`);
         return;
       }
       
@@ -310,7 +345,8 @@ export const useMultiTimeframeAnalysis = (
         const takeProfit = bestPOI.takeProfit;
         const riskReward = bestPOI.riskReward;
 
-        console.log("[AUTO-EXECUTE] 🎯 PRE-LIST TRADER RAIZ APROVADA!");
+        console.log("[AUTO-EXECUTE] 🎯 DECISION ENGINE APROVOU!");
+        console.log(`   Contexto: ${checklist.context?.bias} (${checklist.context?.biasStrength})`);
         console.log(`   Direção: ${direction}`);
         console.log(`   Entry: $${entry.toFixed(2)}`);
         console.log(`   SL: $${stopLoss.toFixed(2)}`);
