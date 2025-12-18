@@ -16,6 +16,42 @@ function getTradingSession(): string {
   return 'NY';
 }
 
+// 🧠 Função para gerar ID do padrão baseado nos dados do sinal
+function generatePatternId(signalData: any, session: string): string {
+  const parts: string[] = [];
+  
+  // Sweep type (high/low)
+  if (signalData?.liquiditySweep?.type) {
+    parts.push(signalData.liquiditySweep.type.toLowerCase());
+  } else if (signalData?.sweep) {
+    parts.push(signalData.sweep.toLowerCase());
+  }
+  
+  // Structure/Trend (bullish/bearish)
+  if (signalData?.bosChoch?.type) {
+    const structure = signalData.bosChoch.type.includes('up') ? 'bullish' : 'bearish';
+    parts.push(structure);
+  } else if (signalData?.structure) {
+    const structure = signalData.structure.includes('up') ? 'bullish' : 'bearish';
+    parts.push(structure);
+  } else if (signalData?.dominantBias?.bias) {
+    parts.push(signalData.dominantBias.bias.toLowerCase());
+  }
+  
+  // Zone (premium/discount)
+  if (signalData?.premiumDiscount?.zone) {
+    parts.push(signalData.premiumDiscount.zone.toLowerCase());
+  } else if (signalData?.zone) {
+    parts.push(signalData.zone.toLowerCase());
+  }
+  
+  // Session
+  parts.push(session.toLowerCase());
+  
+  // Garantir que temos pelo menos a sessão
+  return parts.length > 1 ? parts.join('_') : `unknown_${session.toLowerCase()}`;
+}
+
 // Interface para checklist Trader Raiz
 interface TraderRaizChecklist {
   swingsMapped: boolean;
@@ -273,6 +309,68 @@ serve(async (req) => {
       }
       
       console.log(`[EXECUTE-ORDER] ✅ Pre-List passou: ${checklistStatus.conclusion}`);
+    }
+
+    // ========================================
+    // 🧠 VERIFICAÇÃO DE PADRÕES DA IA LEARNING
+    // ========================================
+    const currentSession = getTradingSession();
+    const currentPattern = generatePatternId(signal_data || {}, currentSession);
+    
+    console.log(`[IA-LEARNING] 🧠 Verificando padrão: "${currentPattern}"`);
+    
+    // Consultar se padrão está na lista de padrões aprendidos
+    const { data: learnedPattern } = await supabase
+      .from('ia_learning_patterns')
+      .select('padrao_id, vezes_testado, wins, losses, taxa_acerto, recompensa_acumulada')
+      .eq('user_id', user.id)
+      .eq('padrao_id', currentPattern)
+      .single();
+
+    if (learnedPattern) {
+      const winRate = learnedPattern.taxa_acerto || 
+        (learnedPattern.vezes_testado > 0 
+          ? (learnedPattern.wins / learnedPattern.vezes_testado) * 100 
+          : 50);
+      
+      console.log(`[IA-LEARNING] 📊 Padrão encontrado: "${currentPattern}"`);
+      console.log(`[IA-LEARNING] Win Rate: ${winRate.toFixed(1)}% (${learnedPattern.wins}W / ${learnedPattern.losses}L em ${learnedPattern.vezes_testado} trades)`);
+      console.log(`[IA-LEARNING] Recompensa acumulada: ${learnedPattern.recompensa_acumulada?.toFixed(2) || 0}`);
+      
+      // 🚫 BLOQUEAR se win rate < 40% E pelo menos 3 trades históricos
+      if (winRate < 40 && learnedPattern.vezes_testado >= 3) {
+        console.log(`[IA-LEARNING] ❌ BLOQUEADO! Padrão com histórico ruim`);
+        
+        // Registrar log de bloqueio
+        await supabase.from('agent_logs').insert({
+          user_id: user.id,
+          agent_name: 'IA_LEARNING_FILTER',
+          status: 'BLOCKED',
+          asset,
+          data: {
+            pattern: currentPattern,
+            winRate,
+            wins: learnedPattern.wins,
+            losses: learnedPattern.losses,
+            totalTrades: learnedPattern.vezes_testado,
+            reason: 'Pattern with poor historical performance',
+          },
+        });
+        
+        throw new Error(`IA Learning: Padrão "${currentPattern}" bloqueado (${winRate.toFixed(0)}% WR em ${learnedPattern.vezes_testado} trades). Histórico ruim - evitar este setup.`);
+      }
+      
+      // ⚠️ ALERTA se win rate entre 40-50%
+      if (winRate >= 40 && winRate < 50) {
+        console.log(`[IA-LEARNING] ⚠️ CUIDADO: Padrão com histórico mediano (${winRate.toFixed(1)}%)`);
+      }
+      
+      // ✅ APROVADO se win rate >= 50%
+      if (winRate >= 50) {
+        console.log(`[IA-LEARNING] ✅ APROVADO! Padrão com bom histórico (${winRate.toFixed(1)}%)`);
+      }
+    } else {
+      console.log(`[IA-LEARNING] ℹ️ Padrão novo "${currentPattern}" (sem histórico - permitindo)`);
     }
 
     // 1. Validar bot_status e configurações
