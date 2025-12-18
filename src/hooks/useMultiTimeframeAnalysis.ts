@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -214,9 +214,33 @@ export const useMultiTimeframeAnalysis = (
     return () => clearInterval(interval);
   }, [symbol, currentTimeframe, JSON.stringify(timeframes)]);
 
-  // Auto-executar sinais APENAS quando Pre-List Trader Raiz for válida
+  // GATE DE PRONTIDÃO: Bloqueia execução até sistema estar completamente pronto
+  const isSystemReady = useMemo(() => {
+    const ready = !!(
+      data &&
+      data.currentTimeframe &&
+      data.checklist &&
+      data.currentTimeframe.premiumDiscount &&
+      data.currentTimeframe.pois &&
+      Object.keys(data).length > 0
+    );
+    
+    if (!ready && data !== null) {
+      console.log("⏸️ Sistema ainda não está pronto - aguardando dados completos");
+    }
+    
+    return ready;
+  }, [data]);
+
+  // Auto-executar sinais APENAS quando Pre-List Trader Raiz for válida E sistema pronto
   useEffect(() => {
     const checkAndExecuteSignals = async () => {
+      // GATE: Verificar prontidão do sistema primeiro
+      if (!isSystemReady) {
+        console.log("[AUTO-EXECUTE] Sistema não está pronto - aguardando dados completos");
+        return;
+      }
+      
       // Verificar se há dados e checklist
       if (!data?.currentTimeframe?.pois || !data?.checklist) {
         console.log("[AUTO-EXECUTE] Sem dados ou checklist");
@@ -358,7 +382,7 @@ export const useMultiTimeframeAnalysis = (
     };
 
     checkAndExecuteSignals();
-  }, [data?.currentTimeframe?.pois?.[0]?.id, data?.checklist?.allCriteriaMet, symbol]);
+  }, [data?.currentTimeframe?.pois?.[0]?.id, data?.checklist?.allCriteriaMet, symbol, isSystemReady]);
 
-  return { data, loading, error, refresh: fetchAnalysis };
+  return { data, loading, error, refresh: fetchAnalysis, isSystemReady };
 };

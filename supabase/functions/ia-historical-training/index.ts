@@ -385,8 +385,14 @@ serve(async (req) => {
     const mainCandles = allTimeframeData.get('15m')!;
     const patternRewards: Map<string, { wins: number; losses: number; reward: number }> = new Map();
 
-    // Processar janela deslizante
-    for (let i = 50; i < mainCandles.length - 100; i++) {
+    // DIVIDIR: 80% para treinamento, 20% para validação
+    const trainingEnd = Math.floor((mainCandles.length - 100) * 0.8);
+    const validationStart = trainingEnd;
+    
+    console.log(`[ia-historical-training] Treinamento: índice 50 a ${trainingEnd}, Validação: ${validationStart} a ${mainCandles.length - 100}`);
+
+    // ========== FASE 1: TREINAMENTO (80%) ==========
+    for (let i = 50; i < trainingEnd; i++) {
       const currentCandle = mainCandles[i];
       const state = analyzeSMCState(mainCandles, i);
       const session = getTradingSession(currentCandle.time);
@@ -505,6 +511,63 @@ serve(async (req) => {
       }
     }
 
+    // ========== FASE 2: VALIDAÇÃO (20%) COM IA TREINADA ==========
+    let validationWins = 0;
+    let validationLosses = 0;
+    let validationTrades = 0;
+
+    console.log(`[ia-historical-training] Iniciando validação com ${patternRewards.size} padrões aprendidos...`);
+
+    for (let i = validationStart; i < mainCandles.length - 100; i++) {
+      const currentCandle = mainCandles[i];
+      const state = analyzeSMCState(mainCandles, i);
+      const session = getTradingSession(currentCandle.time);
+      const pattern = generatePatternId(state, session);
+
+      // Consultar padrão aprendido
+      const learned = patternRewards.get(pattern);
+      
+      // SÓ OPERAR se padrão foi aprendido com taxa_acerto >= 55%
+      if (!learned || (learned.wins + learned.losses) < 3) continue;
+      
+      const learnedWinRate = learned.wins / (learned.wins + learned.losses);
+      if (learnedWinRate < 0.55) continue; // Ignorar padrões ruins
+
+      // Verificar setup válido
+      let direction: 'LONG' | 'SHORT' | null = null;
+      if (isValidSetup(state, 'LONG')) direction = 'LONG';
+      else if (isValidSetup(state, 'SHORT')) direction = 'SHORT';
+      
+      if (!direction) continue;
+
+      const entry = currentCandle.close;
+      const atr = calculateATR(mainCandles.slice(i - 14, i));
+      const sl = direction === 'LONG' ? entry - atr * 1.5 : entry + atr * 1.5;
+      const tp = direction === 'LONG' ? entry + atr * 3 : entry - atr * 3;
+      const rr = direction === 'LONG' ? (tp - entry) / (entry - sl) : (entry - tp) / (sl - entry);
+
+      const setup: TradeSetup = {
+        index: i,
+        direction,
+        entry,
+        sl,
+        tp,
+        rr,
+        pattern,
+        mtfAligned: true
+      };
+
+      const { result } = simulateTrade(mainCandles, setup);
+
+      if (result !== 'PENDING') {
+        validationTrades++;
+        if (result === 'WIN') validationWins++;
+        else validationLosses++;
+      }
+    }
+
+    console.log(`[ia-historical-training] Validação: ${validationWins}W/${validationLosses}L em ${validationTrades} trades`);
+
     console.log(`[ia-historical-training] ${tradesSimulated} trades simulados, ${wins}W/${losses}L`);
 
     // Salvar padrões aprendidos no banco
@@ -545,6 +608,9 @@ serve(async (req) => {
     const topPatterns = sortedPatterns.slice(0, 5);
     const worstPatterns = sortedPatterns.slice(-3).reverse();
 
+    // Calcular win rate da validação
+    const validationWinRate = validationTrades > 0 ? (validationWins / validationTrades) * 100 : 0;
+
     const report = {
       success: true,
       metrics: {
@@ -556,6 +622,12 @@ serve(async (req) => {
         winRate: winRate.toFixed(1),
         patternsLearned: patternsLearned.size
       },
+      validation: {
+        wins: validationWins,
+        losses: validationLosses,
+        winRate: validationWinRate.toFixed(1),
+        tradesValidated: validationTrades
+      },
       topPatterns: topPatterns.map(p => ({
         pattern: p.pattern,
         winRate: p.winRate.toFixed(1),
@@ -566,7 +638,7 @@ serve(async (req) => {
         winRate: p.winRate.toFixed(1),
         trades: p.wins + p.losses
       })),
-      message: `Treinamento concluído! ${patternsLearned.size} padrões aprendidos com ${tradesSimulated} trades simulados (${winRate.toFixed(1)}% WR)`
+      message: `Treinamento concluído! ${patternsLearned.size} padrões aprendidos com ${tradesSimulated} trades simulados (${winRate.toFixed(1)}% WR). Validação: ${validationWins}W/${validationLosses}L (${validationWinRate.toFixed(1)}% WR)`
     };
 
     console.log(`[ia-historical-training] Concluído:`, report.message);
