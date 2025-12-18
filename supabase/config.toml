@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.ia-daily-training]
 verify_jwt = false
+
+[functions.ia-historical-training]
+verify_jwt = false

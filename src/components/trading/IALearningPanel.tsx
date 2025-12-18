@@ -1,11 +1,12 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw } from "lucide-react";
+import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 interface LearningPattern {
   id: string;
@@ -17,12 +18,33 @@ interface LearningPattern {
   recompensa_acumulada: number;
 }
 
+interface PreTrainingReport {
+  success: boolean;
+  metrics: {
+    totalCandles: number;
+    setupsDetected: number;
+    tradesSimulated: number;
+    wins: number;
+    losses: number;
+    winRate: string;
+    patternsLearned: number;
+  };
+  topPatterns: { pattern: string; winRate: string; trades: number }[];
+  worstPatterns: { pattern: string; winRate: string; trades: number }[];
+  message: string;
+}
+
 export const IALearningPanel = () => {
   const [patterns, setPatterns] = useState<LearningPattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [iaEnabled, setIaEnabled] = useState(true);
   const [nivelConfianca, setNivelConfianca] = useState(50);
   const [isTraining, setIsTraining] = useState(false);
+  
+  // Pre-training state
+  const [isPreTraining, setIsPreTraining] = useState(false);
+  const [preTrainingProgress, setPreTrainingProgress] = useState(0);
+  const [preTrainingReport, setPreTrainingReport] = useState<PreTrainingReport | null>(null);
 
   // Fetch IA learning data
   const fetchIAData = async () => {
@@ -66,7 +88,7 @@ export const IALearningPanel = () => {
 
   useEffect(() => {
     fetchIAData();
-    const interval = setInterval(fetchIAData, 60000); // Atualizar a cada 1 minuto
+    const interval = setInterval(fetchIAData, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -77,10 +99,51 @@ export const IALearningPanel = () => {
       const { error } = await supabase.functions.invoke('ia-daily-training');
       if (error) throw error;
       await fetchIAData();
+      toast.success('Treinamento diário concluído!');
     } catch (error) {
       console.error('Erro ao executar treinamento:', error);
+      toast.error('Erro ao executar treinamento');
     } finally {
       setIsTraining(false);
+    }
+  };
+
+  // Iniciar pré-treinamento com dados históricos
+  const startPreTraining = async () => {
+    setIsPreTraining(true);
+    setPreTrainingProgress(10);
+    setPreTrainingReport(null);
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+      
+      toast.info('Iniciando pré-treinamento com dados históricos da Binance...');
+      
+      // Simular progresso enquanto aguarda
+      const progressInterval = setInterval(() => {
+        setPreTrainingProgress(prev => Math.min(prev + 5, 90));
+      }, 2000);
+      
+      const { data, error } = await supabase.functions.invoke('ia-historical-training', {
+        body: { symbol: 'BTCUSDT', userId: user.id }
+      });
+      
+      clearInterval(progressInterval);
+      
+      if (error) throw error;
+      
+      setPreTrainingProgress(100);
+      setPreTrainingReport(data);
+      await fetchIAData();
+      
+      toast.success(data.message);
+      
+    } catch (error: any) {
+      console.error('Erro no pré-treinamento:', error);
+      toast.error(`Erro no pré-treinamento: ${error.message}`);
+    } finally {
+      setIsPreTraining(false);
     }
   };
 
@@ -165,7 +228,7 @@ export const IALearningPanel = () => {
             variant="ghost"
             size="sm"
             onClick={runTraining}
-            disabled={isTraining}
+            disabled={isTraining || isPreTraining}
             className="h-7 text-xs"
           >
             <RefreshCw className={`w-3 h-3 mr-1 ${isTraining ? 'animate-spin' : ''}`} />
@@ -179,6 +242,74 @@ export const IALearningPanel = () => {
             {iaEnabled ? 'ON' : 'OFF'}
           </Badge>
         </div>
+      </div>
+
+      {/* Seção de Pré-Treinamento */}
+      <div className="bg-accent/10 rounded-lg p-3 mb-4 border border-accent/20">
+        <div className="flex items-center gap-2 mb-2">
+          <Database className="w-4 h-4 text-accent" />
+          <span className="text-xs font-semibold text-accent">Pré-Treinamento Histórico</span>
+        </div>
+        
+        {isPreTraining ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-accent" />
+              <span className="text-xs text-muted-foreground">
+                Processando dados da Binance...
+              </span>
+            </div>
+            <Progress value={preTrainingProgress} className="h-2" />
+            <p className="text-xs text-muted-foreground text-center">
+              {preTrainingProgress < 30 && 'Buscando klines históricos...'}
+              {preTrainingProgress >= 30 && preTrainingProgress < 60 && 'Analisando padrões SMC...'}
+              {preTrainingProgress >= 60 && preTrainingProgress < 90 && 'Simulando trades...'}
+              {preTrainingProgress >= 90 && 'Salvando aprendizado...'}
+            </p>
+          </div>
+        ) : preTrainingReport ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-background/50 rounded p-2">
+                <p className="text-lg font-bold text-foreground">{preTrainingReport.metrics.tradesSimulated}</p>
+                <p className="text-xs text-muted-foreground">Trades</p>
+              </div>
+              <div className="bg-background/50 rounded p-2">
+                <p className="text-lg font-bold text-success">{preTrainingReport.metrics.winRate}%</p>
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+              </div>
+              <div className="bg-background/50 rounded p-2">
+                <p className="text-lg font-bold text-accent">{preTrainingReport.metrics.patternsLearned}</p>
+                <p className="text-xs text-muted-foreground">Padrões</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startPreTraining}
+              className="w-full h-7 text-xs"
+            >
+              <RefreshCw className="w-3 h-3 mr-1" />
+              Re-treinar
+            </Button>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground mb-2">
+              Treine a IA com dados históricos reais da Binance para iniciar com conhecimento
+            </p>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={startPreTraining}
+              disabled={isPreTraining}
+              className="h-8 text-xs"
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Iniciar Pré-Treinamento
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Nível de Confiança Principal */}
@@ -264,11 +395,11 @@ export const IALearningPanel = () => {
       )}
 
       {/* Indicador de Status */}
-      {patterns.length === 0 ? (
+      {patterns.length === 0 && !preTrainingReport ? (
         <div className="text-center py-4">
           <Zap className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-xs text-muted-foreground">
-            A IA começará a aprender após os primeiros trades
+            Use o Pré-Treinamento ou aguarde os primeiros trades
           </p>
         </div>
       ) : (
