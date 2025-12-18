@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.ia-historical-training]
 verify_jwt = false
+
+[functions.ia-incremental-training]
+verify_jwt = false

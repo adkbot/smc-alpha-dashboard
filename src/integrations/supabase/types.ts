@@ -440,6 +440,50 @@ export type Database = {
           },
         ]
       }
+      ia_elite_buffer: {
+        Row: {
+          created_at: string | null
+          discipline_score: number
+          id: string
+          mtf_aligned: boolean | null
+          replay_buffer_id: string | null
+          rr_achieved: number
+          times_used_in_training: number | null
+          training_weight: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          discipline_score: number
+          id?: string
+          mtf_aligned?: boolean | null
+          replay_buffer_id?: string | null
+          rr_achieved: number
+          times_used_in_training?: number | null
+          training_weight?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          discipline_score?: number
+          id?: string
+          mtf_aligned?: boolean | null
+          replay_buffer_id?: string | null
+          rr_achieved?: number
+          times_used_in_training?: number | null
+          training_weight?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ia_elite_buffer_replay_buffer_id_fkey"
+            columns: ["replay_buffer_id"]
+            isOneToOne: false
+            referencedRelation: "ia_replay_buffer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ia_learning_patterns: {
         Row: {
           created_at: string
@@ -479,6 +523,141 @@ export type Database = {
           user_id?: string
           vezes_testado?: number
           wins?: number
+        }
+        Relationships: []
+      }
+      ia_model_weights: {
+        Row: {
+          confidence_level: number | null
+          created_at: string | null
+          frozen_patterns: Json | null
+          id: string
+          is_current: boolean | null
+          is_production: boolean | null
+          model_name: string | null
+          pattern_weights: Json
+          test_blind_trades: number | null
+          test_blind_winrate: number | null
+          train_trades: number | null
+          train_winrate: number | null
+          training_config: Json | null
+          updated_at: string | null
+          user_id: string
+          validation_trades: number | null
+          validation_winrate: number | null
+          version: number
+        }
+        Insert: {
+          confidence_level?: number | null
+          created_at?: string | null
+          frozen_patterns?: Json | null
+          id?: string
+          is_current?: boolean | null
+          is_production?: boolean | null
+          model_name?: string | null
+          pattern_weights?: Json
+          test_blind_trades?: number | null
+          test_blind_winrate?: number | null
+          train_trades?: number | null
+          train_winrate?: number | null
+          training_config?: Json | null
+          updated_at?: string | null
+          user_id: string
+          validation_trades?: number | null
+          validation_winrate?: number | null
+          version?: number
+        }
+        Update: {
+          confidence_level?: number | null
+          created_at?: string | null
+          frozen_patterns?: Json | null
+          id?: string
+          is_current?: boolean | null
+          is_production?: boolean | null
+          model_name?: string | null
+          pattern_weights?: Json
+          test_blind_trades?: number | null
+          test_blind_winrate?: number | null
+          train_trades?: number | null
+          train_winrate?: number | null
+          training_config?: Json | null
+          updated_at?: string | null
+          user_id?: string
+          validation_trades?: number | null
+          validation_winrate?: number | null
+          version?: number
+        }
+        Relationships: []
+      }
+      ia_replay_buffer: {
+        Row: {
+          action: string
+          context_score: number | null
+          created_at: string | null
+          discipline_score: number | null
+          done: boolean | null
+          entry_price: number | null
+          entry_quality: number | null
+          exit_price: number | null
+          id: string
+          is_elite: boolean | null
+          metadata: Json
+          next_state: Json | null
+          pattern_id: string | null
+          pnl: number | null
+          reward: number
+          reward_breakdown: Json | null
+          rr_achieved: number | null
+          session_type: string | null
+          state: Json
+          trade_result: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          context_score?: number | null
+          created_at?: string | null
+          discipline_score?: number | null
+          done?: boolean | null
+          entry_price?: number | null
+          entry_quality?: number | null
+          exit_price?: number | null
+          id?: string
+          is_elite?: boolean | null
+          metadata?: Json
+          next_state?: Json | null
+          pattern_id?: string | null
+          pnl?: number | null
+          reward?: number
+          reward_breakdown?: Json | null
+          rr_achieved?: number | null
+          session_type?: string | null
+          state: Json
+          trade_result?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          context_score?: number | null
+          created_at?: string | null
+          discipline_score?: number | null
+          done?: boolean | null
+          entry_price?: number | null
+          entry_quality?: number | null
+          exit_price?: number | null
+          id?: string
+          is_elite?: boolean | null
+          metadata?: Json
+          next_state?: Json | null
+          pattern_id?: string | null
+          pnl?: number | null
+          reward?: number
+          reward_breakdown?: Json | null
+          rr_achieved?: number | null
+          session_type?: string | null
+          state?: Json
+          trade_result?: string | null
+          user_id?: string
         }
         Relationships: []
       }
