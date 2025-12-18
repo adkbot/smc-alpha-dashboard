@@ -201,7 +201,7 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// PRE-LIST TRADE RAIZ EVOLUÍDO - 5 CRITÉRIOS ESSENCIAIS
+// PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE SYSTEM
 interface TraderRaizChecklist {
   // Critério 1: Sweep detectado
   sweepDetected: boolean;
@@ -221,7 +221,7 @@ interface TraderRaizChecklist {
   zoneCorrect: boolean;
   zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
   
-  // Critério 5: R:R >= 3:1
+  // Critério 5: R:R >= 2.5:1
   riskRewardValid: boolean;
   riskRewardValue: number;
   
@@ -240,6 +240,12 @@ interface TraderRaizChecklist {
   orderBlockStrength: number;
   orderBlockEntry50: number | null;
   entryConfirmed: boolean;
+  
+  // 🆕 CONFLUENCE SCORE
+  confluenceScore: number;
+  confluenceMaxScore: number;
+  confluencePercentage: number;
+  confluenceFactors: string[];
   
   // Resultado final
   criteriaCount: number;
@@ -1027,7 +1033,97 @@ function calculatePOIs(
   return pois.sort((a, b) => b.riskReward - a.riskReward).slice(0, 3);
 }
 
-// ==================== PRE-LIST TRADE RAIZ (5 CRITÉRIOS) ====================
+// ==================== CONFLUENCE SCORE SYSTEM ====================
+
+interface ConfluenceResult {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  factors: string[];
+}
+
+function calculateConfluenceScore(
+  sweep: SweepDetection,
+  bosChoch: BOSCHOCHResult,
+  fvgs: FVG[],
+  orderBlocks: OrderBlock[],
+  premiumDiscount: PremiumDiscountResult,
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  manipulationZones: ManipulationZone[],
+  pois: POI[]
+): ConfluenceResult {
+  let score = 0;
+  const maxScore = 10;
+  const factors: string[] = [];
+
+  // ====== TIER 1: ALTA IMPORTÂNCIA (2.0 pontos cada) ======
+  
+  // 1. HTF Alinhado (viés dominante definido e forte)
+  if (dominantBias.bias !== "MISTO" && dominantBias.strength !== "FRACO") {
+    score += 2.0;
+    factors.push(`✓ HTF ${dominantBias.bias} (${dominantBias.strength}) +2.0`);
+  }
+  
+  // 2. Zona correta (Premium/Discount alinhada com viés)
+  const zoneAligned = (
+    (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") ||
+    (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM")
+  );
+  if (zoneAligned) {
+    score += 2.0;
+    factors.push(`✓ Zona ${premiumDiscount.status} alinhada +2.0`);
+  }
+
+  // ====== TIER 2: MÉDIA IMPORTÂNCIA (1.5 pontos cada) ======
+  
+  // 3. FVG presente
+  if (fvgs.length > 0) {
+    score += 1.5;
+    factors.push(`✓ FVG ${fvgs[0].type} presente +1.5`);
+  }
+  
+  // 4. Estrutura confirmada (BOS/CHOCH/BOSS)
+  if (bosChoch.boss?.confirmado || bosChoch.lastBOS || bosChoch.lastCHOCH) {
+    score += 1.5;
+    const structType = bosChoch.boss?.tipo || bosChoch.trend;
+    factors.push(`✓ Estrutura ${structType} +1.5`);
+  }
+
+  // ====== TIER 3: BÔNUS (1.0 ponto cada) ======
+  
+  // 5. Sweep detectado (bônus, não obrigatório!)
+  if (sweep.detected) {
+    score += 1.0;
+    factors.push(`✓ SWEEP ${sweep.type} +1.0`);
+  }
+  
+  // 6. Order Block presente
+  if (orderBlocks.length > 0) {
+    score += 1.0;
+    factors.push(`✓ OB ${orderBlocks[0].type} +1.0`);
+  }
+  
+  // 7. Manipulação identificada
+  if (manipulationZones.length > 0) {
+    score += 0.5;
+    factors.push(`✓ ${manipulationZones.length} zonas manipulação +0.5`);
+  }
+  
+  // 8. Sessão favorável (London ou NY)
+  const session = getTradingSession();
+  if (session === 'LONDON' || session === 'NY') {
+    score += 0.5;
+    factors.push(`✓ Sessão ${session} +0.5`);
+  }
+
+  const percentage = (score / maxScore) * 100;
+  
+  console.log(`[CONFLUENCE] Score: ${score.toFixed(1)}/${maxScore} (${percentage.toFixed(0)}%) - Fatores: ${factors.length}`);
+
+  return { score, maxScore, percentage, factors };
+}
+
+// ==================== PRE-LIST TRADE RAIZ (CONFLUENCE-BASED) ====================
 
 function calculateTraderRaizChecklist(
   swings: SwingPoint[],
@@ -1040,91 +1136,65 @@ function calculateTraderRaizChecklist(
   pois: POI[],
   sweep: SweepDetection
 ): TraderRaizChecklist {
-  let criteriaCount = 0;
-  const reasons: string[] = [];
   
-  // ========== CRITÉRIO 1: SWEEP DETECTADO ==========
+  // 🆕 CALCULAR CONFLUENCE SCORE
+  const confluence = calculateConfluenceScore(
+    sweep, bosChoch, fvgs, orderBlocks, 
+    premiumDiscount, dominantBias, manipulationZones, pois
+  );
+  
+  // ========== CRITÉRIOS INDIVIDUAIS (para exibição na UI) ==========
   const sweepDetected = sweep.detected;
-  if (sweepDetected) {
-    criteriaCount++;
-    reasons.push(`✓ SWEEP ${sweep.type} @ $${sweep.level?.toFixed(2)}`);
-  } else {
-    reasons.push("✗ Sem sweep de liquidez");
-  }
-  
-  // ========== CRITÉRIO 2: ESTRUTURA (BOS/CHOCH) ==========
   const structureConfirmed = bosChoch.boss?.confirmado || bosChoch.lastBOS !== null || bosChoch.lastCHOCH !== null;
   const structureType = bosChoch.boss?.confirmado ? "BOS" : bosChoch.lastCHOCH ? "CHOCH" : bosChoch.lastBOS ? "BOS" : null;
   const structurePrice = bosChoch.boss?.preco_rompido || null;
   
-  if (structureConfirmed) {
-    criteriaCount++;
-    reasons.push(`✓ ${structureType || 'Estrutura'} confirmado`);
-  } else {
-    reasons.push("✗ Sem estrutura confirmada");
-  }
-  
-  // ========== CRITÉRIO 3: FVG PRESENTE ==========
   const relevantFvgType = sweep.type === "sweep_low" ? "bullish" : sweep.type === "sweep_high" ? "bearish" : null;
   const fvgPresent = relevantFvgType 
     ? fvgs.some(f => f.type === relevantFvgType)
     : fvgs.length > 0;
   const fvgType = fvgs[0]?.type || null;
   
-  if (fvgPresent) {
-    criteriaCount++;
-    reasons.push(`✓ FVG ${fvgType} presente`);
-  } else {
-    reasons.push("✗ Sem FVG");
-  }
-  
-  // ========== CRITÉRIO 4: ZONA CORRETA ==========
-  // Para LONG (sweep low): precisa estar em DISCOUNT
-  // Para SHORT (sweep high): precisa estar em PREMIUM
   let zoneCorrect = false;
   if (sweep.type === "sweep_low" && premiumDiscount.status === "DISCOUNT") {
     zoneCorrect = true;
   } else if (sweep.type === "sweep_high" && premiumDiscount.status === "PREMIUM") {
     zoneCorrect = true;
   } else if (!sweep.detected) {
-    // Sem sweep, aceitar zona alinhada com viés
     zoneCorrect = (
       (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") ||
       (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM")
     );
   }
   
-  if (zoneCorrect) {
-    criteriaCount++;
-    reasons.push(`✓ Zona ${premiumDiscount.status} correta`);
-  } else {
-    reasons.push(`✗ Zona ${premiumDiscount.status} incorreta`);
-  }
-  
-  // ========== CRITÉRIO 5: R:R >= 3:1 ==========
+  // R:R com threshold ajustado para 2.5:1 (mais realista)
   const bestPOI = pois[0];
   const rrValue = bestPOI?.riskReward || 0;
-  const riskRewardValid = rrValue >= 3.0;
+  const riskRewardValid = rrValue >= 2.5;
   
-  if (riskRewardValid) {
-    criteriaCount++;
-    reasons.push(`✓ RR 1:${rrValue.toFixed(1)} (>= 3:1)`);
-  } else {
-    reasons.push(`✗ RR 1:${rrValue.toFixed(1)} < 3:1`);
-  }
-  
-  // ========== CONCLUSÃO ==========
-  // TRADE RAIZ: 5 de 5 critérios para entrada válida
-  const allCriteriaMet = criteriaCount >= 4; // 4 de 5 é suficiente (mais realista)
+  // ========== 🆕 CONCLUSÃO BASEADA EM CONFLUENCE SCORE ==========
+  // Score >= 6.0 (60%) → ENTRADA VÁLIDA
+  // Score >= 4.0 (40%) → AGUARDAR
+  // Score < 4.0 → ANULAR
+  let allCriteriaMet = false;
   let conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
   
-  if (criteriaCount >= 4) {
+  if (confluence.score >= 6.0 && riskRewardValid) {
     conclusion = "ENTRADA VÁLIDA";
-  } else if (criteriaCount >= 3) {
+    allCriteriaMet = true;
+  } else if (confluence.score >= 4.0) {
     conclusion = "AGUARDAR";
+    // Exceção: Score alto (8+) pode compensar R:R menor
+    if (confluence.score >= 8.0 && rrValue >= 2.0) {
+      conclusion = "ENTRADA VÁLIDA";
+      allCriteriaMet = true;
+    }
   } else {
     conclusion = "ANULAR";
   }
+  
+  // 🆕 Critérios count agora baseado no score
+  const criteriaCount = Math.round((confluence.score / confluence.maxScore) * 5);
   
   // Campos legacy para compatibilidade
   const validOB = orderBlocks.find(ob => 
@@ -1132,8 +1202,14 @@ function calculateTraderRaizChecklist(
     (dominantBias.bias === "BAIXA" && ob.type === "bearish")
   );
   
+  const reasoning = confluence.factors.length > 0 
+    ? confluence.factors.join(" | ") 
+    : "Sem fatores de confluência";
+  
+  console.log(`[CHECKLIST] Confluência: ${confluence.score.toFixed(1)}/10 | R:R: ${rrValue.toFixed(1)} | Conclusão: ${conclusion}`);
+  
   return {
-    // Novos 5 critérios
+    // 5 critérios originais (para UI)
     sweepDetected,
     sweepType: sweep.type,
     sweepLevel: sweep.level,
@@ -1163,10 +1239,16 @@ function calculateTraderRaizChecklist(
     orderBlockEntry50: validOB?.midpoint || null,
     entryConfirmed: pois.length > 0,
     
+    // 🆕 CONFLUENCE SCORE (novos campos)
+    confluenceScore: confluence.score,
+    confluenceMaxScore: confluence.maxScore,
+    confluencePercentage: confluence.percentage,
+    confluenceFactors: confluence.factors,
+    
     criteriaCount,
     allCriteriaMet,
     conclusion,
-    reasoning: reasons.join(" | "),
+    reasoning,
   };
 }
 

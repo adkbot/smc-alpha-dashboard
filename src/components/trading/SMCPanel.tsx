@@ -752,7 +752,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         }`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-              📋 PRE-LIST TRADER RAIZ
+              📋 CONFLUENCE SCORE
             </h3>
             <Badge className={`text-xs font-bold ${
               mtfData.checklist.conclusion === "ENTRADA VÁLIDA"
@@ -761,9 +761,61 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 ? "bg-warning text-warning-foreground"
                 : "bg-destructive"
             }`}>
-              {mtfData.checklist.criteriaCount}/5 ✓
+              {(mtfData.checklist.confluenceScore || 0).toFixed(1)}/10
             </Badge>
           </div>
+
+          {/* 🆕 CONFLUENCE SCORE BAR */}
+          <Card className="p-3 mb-3 bg-card/50 border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-muted-foreground">Score de Confluência</span>
+              <span className={`text-sm font-bold ${
+                (mtfData.checklist.confluencePercentage || 0) >= 60 
+                  ? "text-success" 
+                  : (mtfData.checklist.confluencePercentage || 0) >= 40
+                  ? "text-warning"
+                  : "text-destructive"
+              }`}>
+                {(mtfData.checklist.confluencePercentage || 0).toFixed(0)}%
+              </span>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-2">
+              <div 
+                className={`h-full transition-all duration-500 ${
+                  (mtfData.checklist.confluencePercentage || 0) >= 60 
+                    ? "bg-success" 
+                    : (mtfData.checklist.confluencePercentage || 0) >= 40
+                    ? "bg-warning"
+                    : "bg-destructive"
+                }`}
+                style={{ width: `${Math.min(mtfData.checklist.confluencePercentage || 0, 100)}%` }}
+              />
+            </div>
+            
+            {/* Thresholds */}
+            <div className="flex justify-between text-[9px] text-muted-foreground">
+              <span>0 (Anular)</span>
+              <span>40% (Aguardar)</span>
+              <span>60% (Entrada)</span>
+              <span>100%</span>
+            </div>
+            
+            {/* Fatores de Confluência */}
+            {mtfData.checklist.confluenceFactors && mtfData.checklist.confluenceFactors.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-border">
+                <div className="text-[9px] text-muted-foreground mb-1">Fatores ativos:</div>
+                <div className="flex flex-wrap gap-1">
+                  {mtfData.checklist.confluenceFactors.map((factor, i) => (
+                    <Badge key={i} variant="outline" className="text-[8px] py-0 px-1">
+                      {factor}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
 
           {/* BANNER VISUAL DE ZONA DE OPERAÇÃO */}
           {realtimeStatus && (
