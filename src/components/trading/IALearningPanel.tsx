@@ -286,45 +286,45 @@ export const IALearningPanel = () => {
     }
   };
 
-  // 🆕 LIMPAR DADOS E RE-TREINAR (começar do zero)
-  const clearAndRetrain = async () => {
+  // 🆕 LIMPAR APENAS DADOS (sem re-treinar)
+  const clearAllData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     
-    // Confirmação
     if (!confirm('⚠️ Isto vai APAGAR todos os dados de treinamento da IA. Tem certeza?')) return;
     
     toast.info('🗑️ Limpando dados de treinamento...');
     
     try {
-      // 1. Limpar padrões aprendidos
-      await supabase.from('ia_learning_patterns').delete().eq('user_id', user.id);
+      // Limpar todas as tabelas de IA
+      await Promise.all([
+        supabase.from('ia_learning_patterns').delete().eq('user_id', user.id),
+        supabase.from('ia_model_weights').delete().eq('user_id', user.id),
+        supabase.from('ia_replay_buffer').delete().eq('user_id', user.id),
+        supabase.from('ia_elite_buffer').delete().eq('user_id', user.id),
+        supabase.from('ia_trade_context').delete().eq('user_id', user.id),
+      ]);
       
-      // 2. Limpar modelos
-      await supabase.from('ia_model_weights').delete().eq('user_id', user.id);
-      
-      // 3. Limpar replay buffer
-      await supabase.from('ia_replay_buffer').delete().eq('user_id', user.id);
-      
-      // 4. Limpar elite buffer
-      await supabase.from('ia_elite_buffer').delete().eq('user_id', user.id);
-      
-      // 5. Resetar state local
+      // Resetar state local
       setPatterns([]);
       setPreTrainingReport(null);
       setModelStatus(null);
       setTrainingComplete(false);
       setNivelConfianca(50);
+      setRealStats({ totalTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnL: 0 });
       
-      toast.success('✅ Dados limpos! Iniciando novo treinamento...');
-      
-      // 6. Iniciar novo treinamento automaticamente
-      await startPreTraining();
+      toast.success('✅ Todos os dados da IA foram limpos!');
       
     } catch (error: any) {
       console.error('Erro ao limpar dados:', error);
       toast.error(`❌ Erro ao limpar: ${error.message}`);
     }
+  };
+
+  // LIMPAR E RE-TREINAR
+  const clearAndRetrain = async () => {
+    await clearAllData();
+    await startPreTraining();
   };
 
   // Toggle IA
@@ -424,6 +424,16 @@ export const IALearningPanel = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearAllData}
+            disabled={isTraining || isPreTraining}
+            className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+            title="Limpar todos os dados da IA"
+          >
+            <Trash2 className="w-3 h-3" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
