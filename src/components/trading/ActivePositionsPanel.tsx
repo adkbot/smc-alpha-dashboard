@@ -113,19 +113,48 @@ export const ActivePositionsPanel = () => {
     }
   }, [user]);
 
+  // 🆕 Monitor automático de posições (verifica SL/TP a cada 30s)
+  const monitorPositions = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      console.log('[MONITOR] Verificando posições abertas...');
+      const { data, error } = await supabase.functions.invoke('monitor-positions', {
+        body: { user_id: user.id }
+      });
+      
+      if (error) {
+        console.error('[MONITOR] Erro:', error);
+        return;
+      }
+      
+      if (data?.positionsClosed > 0) {
+        toast({
+          title: "Posição Fechada Automaticamente",
+          description: `${data.positionsClosed} posição(ões) fechada(s) por SL/TP`,
+        });
+        fetchPositions();
+      }
+      
+      console.log(`[MONITOR] ✅ ${data?.positionsChecked || 0} posições verificadas, ${data?.positionsClosed || 0} fechadas`);
+    } catch (error) {
+      console.error('[MONITOR] Erro ao monitorar:', error);
+    }
+  }, [user, toast, fetchPositions]);
+
   useEffect(() => {
     fetchPositions();
-    // Sincronizar com Binance na primeira carga
     syncPositionsWithBinance();
+    monitorPositions(); // 🆕 Verificar SL/TP imediatamente
     
     const interval = setInterval(() => {
       fetchPositions();
-      // Sincronizar com Binance a cada 30 segundos
       syncPositionsWithBinance();
+      monitorPositions(); // 🆕 Verificar SL/TP a cada 30s
     }, 30000);
     
     return () => clearInterval(interval);
-  }, [fetchPositions, syncPositionsWithBinance]);
+  }, [fetchPositions, syncPositionsWithBinance, monitorPositions]);
 
   const closeManually = async (positionId: string, position: ActivePosition) => {
     setLoading(true);
