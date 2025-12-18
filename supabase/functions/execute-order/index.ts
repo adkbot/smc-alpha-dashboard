@@ -17,39 +17,48 @@ function getTradingSession(): string {
 }
 
 // 🧠 Função para gerar ID do padrão baseado nos dados do sinal
+// FORMATO: sweep_structure_fvg_zone_session (igual ao ia-historical-training)
 function generatePatternId(signalData: any, session: string): string {
-  const parts: string[] = [];
-  
-  // Sweep type (high/low)
+  // 1. SWEEP (high/low/none)
+  let sweep = 'none';
   if (signalData?.liquiditySweep?.type) {
-    parts.push(signalData.liquiditySweep.type.toLowerCase());
+    sweep = signalData.liquiditySweep.type.toLowerCase();
   } else if (signalData?.sweep) {
-    parts.push(signalData.sweep.toLowerCase());
+    sweep = signalData.sweep.toLowerCase();
   }
   
-  // Structure/Trend (bullish/bearish)
+  // 2. STRUCTURE (bos_up/bos_down/choch_up/choch_down/none)
+  let structure = 'none';
   if (signalData?.bosChoch?.type) {
-    const structure = signalData.bosChoch.type.includes('up') ? 'bullish' : 'bearish';
-    parts.push(structure);
+    structure = signalData.bosChoch.type.toLowerCase();
   } else if (signalData?.structure) {
-    const structure = signalData.structure.includes('up') ? 'bullish' : 'bearish';
-    parts.push(structure);
+    structure = signalData.structure.toLowerCase();
+  }
+  
+  // 3. FVG (bullish/bearish/none)
+  let fvg = 'none';
+  if (signalData?.fvg?.type) {
+    fvg = signalData.fvg.type.toLowerCase();
   } else if (signalData?.dominantBias?.bias) {
-    parts.push(signalData.dominantBias.bias.toLowerCase());
+    fvg = signalData.dominantBias.bias.toLowerCase();
   }
   
-  // Zone (premium/discount)
+  // 4. ZONE (premium/discount/equilibrium)
+  let zone = 'equilibrium';
   if (signalData?.premiumDiscount?.zone) {
-    parts.push(signalData.premiumDiscount.zone.toLowerCase());
+    zone = signalData.premiumDiscount.zone.toLowerCase();
   } else if (signalData?.zone) {
-    parts.push(signalData.zone.toLowerCase());
+    zone = signalData.zone.toLowerCase();
   }
   
-  // Session
-  parts.push(session.toLowerCase());
+  // 5. SESSION (asia/london/newyork/oceania)
+  const sessionLower = session.toLowerCase();
   
-  // Garantir que temos pelo menos a sessão
-  return parts.length > 1 ? parts.join('_') : `unknown_${session.toLowerCase()}`;
+  // FORMATO FINAL: sweep_structure_fvg_zone_session
+  const patternId = `${sweep}_${structure}_${fvg}_${zone}_${sessionLower}`;
+  console.log(`[PATTERN-GEN] Gerado: ${patternId} de signalData:`, JSON.stringify(signalData || {}).slice(0, 200));
+  
+  return patternId;
 }
 
 // Interface para checklist Trader Raiz
@@ -370,7 +379,57 @@ serve(async (req) => {
         console.log(`[IA-LEARNING] ✅ APROVADO! Padrão com bom histórico (${winRate.toFixed(1)}%)`);
       }
     } else {
-      console.log(`[IA-LEARNING] ℹ️ Padrão novo "${currentPattern}" (sem histórico - permitindo)`);
+      console.log(`[IA-LEARNING] ℹ️ Padrão "${currentPattern}" não encontrado - buscando padrões similares...`);
+      
+      // Extrair componentes do padrão para busca flexível
+      const patternParts = currentPattern.split('_');
+      const sweep = patternParts[0] || 'none';
+      const zone = patternParts[3] || 'equilibrium';
+      const session = patternParts[4] || currentSession.toLowerCase();
+      
+      // Buscar padrões similares (mesmo sweep + zone + session)
+      const { data: similarPatterns } = await supabase
+        .from('ia_learning_patterns')
+        .select('padrao_id, vezes_testado, wins, losses, taxa_acerto')
+        .eq('user_id', user.id)
+        .gte('vezes_testado', 3)
+        .lt('taxa_acerto', 40);
+      
+      if (similarPatterns && similarPatterns.length > 0) {
+        // Filtrar padrões com sweep + zone + session iguais
+        const matchingBadPatterns = similarPatterns.filter(p => {
+          const parts = p.padrao_id.split('_');
+          return parts[0] === sweep && parts[3] === zone && parts[4] === session;
+        });
+        
+        if (matchingBadPatterns.length > 0) {
+          const worstPattern = matchingBadPatterns.reduce((worst, p) => 
+            (p.taxa_acerto < (worst?.taxa_acerto || 100)) ? p : worst
+          , matchingBadPatterns[0]);
+          
+          console.log(`[IA-LEARNING] ❌ BLOQUEADO! Padrão similar com histórico ruim encontrado: ${worstPattern.padrao_id}`);
+          console.log(`[IA-LEARNING] Similar WR: ${worstPattern.taxa_acerto?.toFixed(1)}% (${worstPattern.wins}W / ${worstPattern.losses}L)`);
+          
+          await supabase.from('agent_logs').insert({
+            user_id: user.id,
+            agent_name: 'IA_LEARNING_FILTER',
+            status: 'BLOCKED_SIMILAR',
+            asset,
+            data: {
+              currentPattern,
+              similarPattern: worstPattern.padrao_id,
+              winRate: worstPattern.taxa_acerto,
+              wins: worstPattern.wins,
+              losses: worstPattern.losses,
+              reason: 'Similar pattern with poor historical performance',
+            },
+          });
+          
+          throw new Error(`IA Learning: Padrão similar "${worstPattern.padrao_id}" bloqueado (${worstPattern.taxa_acerto?.toFixed(0)}% WR). Setup de risco - evitar combinação ${sweep}+${zone}+${session}.`);
+        }
+      }
+      
+      console.log(`[IA-LEARNING] ✅ Nenhum padrão similar ruim encontrado - permitindo trade`);
     }
 
     // 1. Validar bot_status e configurações
