@@ -78,9 +78,9 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// PRE-LIST TRADE RAIZ EVOLUÍDO - 5 CRITÉRIOS
+// PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE
 export interface TraderRaizChecklist {
-  // 5 critérios principais
+  // 5 critérios principais (para UI)
   sweepDetected: boolean;
   sweepType: "sweep_low" | "sweep_high" | null;
   sweepLevel: number | null;
@@ -109,6 +109,13 @@ export interface TraderRaizChecklist {
   orderBlockStrength: number;
   orderBlockEntry50: number | null;
   entryConfirmed: boolean;
+  
+  // 🆕 CONFLUENCE SCORE
+  confluenceScore: number;
+  confluenceMaxScore: number;
+  confluencePercentage: number;
+  confluenceFactors: string[];
+  
   criteriaCount: number;
   allCriteriaMet: boolean;
   conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
@@ -250,15 +257,21 @@ export const useMultiTimeframeAnalysis = (
       const checklist = data.checklist;
       const bestPOI = data.currentTimeframe.pois[0];
       
-      // TRADE RAIZ: Só executa se critérios forem satisfeitos (4 de 5)
+      // 🆕 CONFLUENCE SCORE: Log detalhado
+      console.log(`[AUTO-EXECUTE] Confluence Score: ${checklist.confluenceScore?.toFixed(1) || 0}/${checklist.confluenceMaxScore || 10} (${checklist.confluencePercentage?.toFixed(0) || 0}%)`);
+      if (checklist.confluenceFactors?.length > 0) {
+        console.log(`[AUTO-EXECUTE] Fatores: ${checklist.confluenceFactors.join(', ')}`);
+      }
+      
+      // CONFLUENCE: Só executa se score >= 6.0 (60%)
       if (!checklist.allCriteriaMet) {
-        console.log(`[AUTO-EXECUTE] Pre-List: ${checklist.conclusion} (${checklist.criteriaCount}/5) - NÃO EXECUTAR`);
+        console.log(`[AUTO-EXECUTE] Confluência insuficiente: ${checklist.confluenceScore?.toFixed(1) || 0}/10 - ${checklist.conclusion}`);
         return;
       }
       
-      // TRADE RAIZ: Verificar se há POI válido com R:R >= 3:1
-      if (!bestPOI || bestPOI.riskReward < 3.0) {
-        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward || 0} < 3:1 - ABORTANDO`);
+      // R:R mínimo de 2.5:1 (mais realista)
+      if (!bestPOI || bestPOI.riskReward < 2.5) {
+        console.log(`[AUTO-EXECUTE] R:R ${bestPOI?.riskReward?.toFixed(1) || 0} < 2.5:1 - ABORTANDO`);
         return;
       }
       
