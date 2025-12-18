@@ -1,12 +1,13 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database } from "lucide-react";
+import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database, Trophy, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface LearningPattern {
   id: string;
@@ -45,6 +46,7 @@ export const IALearningPanel = () => {
   const [isPreTraining, setIsPreTraining] = useState(false);
   const [preTrainingProgress, setPreTrainingProgress] = useState(0);
   const [preTrainingReport, setPreTrainingReport] = useState<PreTrainingReport | null>(null);
+  const [trainingComplete, setTrainingComplete] = useState(false);
 
   // Fetch IA learning data
   const fetchIAData = async () => {
@@ -113,12 +115,15 @@ export const IALearningPanel = () => {
     setIsPreTraining(true);
     setPreTrainingProgress(10);
     setPreTrainingReport(null);
+    setTrainingComplete(false);
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
       
-      toast.info('Iniciando pré-treinamento com dados históricos da Binance...');
+      toast.info('🚀 Iniciando pré-treinamento com dados históricos da Binance...', {
+        duration: 5000,
+      });
       
       // Simular progresso enquanto aguarda
       const progressInterval = setInterval(() => {
@@ -135,13 +140,33 @@ export const IALearningPanel = () => {
       
       setPreTrainingProgress(100);
       setPreTrainingReport(data);
+      setTrainingComplete(true);
+      
+      // Ativar IA Learning automaticamente após treinamento bem-sucedido
+      await supabase
+        .from('user_settings')
+        .upsert({ 
+          user_id: user.id, 
+          ia_learning_enabled: true 
+        }, { onConflict: 'user_id' });
+      
+      setIaEnabled(true);
       await fetchIAData();
       
-      toast.success(data.message);
+      // Notificação PROEMINENTE de treinamento completo
+      toast.success(
+        `🎯 TREINAMENTO DA IA COMPLETO!`, 
+        {
+          description: `✅ ${data.metrics.tradesSimulated} trades simulados | Win Rate: ${data.metrics.winRate}% | ${data.metrics.patternsLearned} padrões aprendidos`,
+          duration: 15000,
+        }
+      );
       
     } catch (error: any) {
       console.error('Erro no pré-treinamento:', error);
-      toast.error(`Erro no pré-treinamento: ${error.message}`);
+      toast.error(`❌ Erro no pré-treinamento: ${error.message}`, {
+        duration: 8000,
+      });
     } finally {
       setIsPreTraining(false);
     }
@@ -215,13 +240,33 @@ export const IALearningPanel = () => {
 
   return (
     <Card className="p-4 border-border bg-card">
+      {/* Alerta de Treinamento Completo */}
+      {trainingComplete && preTrainingReport && (
+        <Alert className="mb-4 border-success bg-success/10 animate-pulse">
+          <Trophy className="h-5 w-5 text-success" />
+          <AlertTitle className="text-success font-bold flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
+            IA TREINADA COM SUCESSO!
+          </AlertTitle>
+          <AlertDescription className="text-success/90">
+            A IA aprendeu {preTrainingReport.metrics.patternsLearned} padrões com {preTrainingReport.metrics.winRate}% de Win Rate.
+            O sistema agora opera com conhecimento pré-treinado!
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Brain className="w-4 h-4 text-accent" />
+          <Brain className={`w-4 h-4 ${trainingComplete ? 'text-success' : 'text-accent'}`} />
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider">
             IA Evolutiva
           </h3>
+          {trainingComplete && (
+            <Badge variant="default" className="bg-success text-success-foreground text-xs animate-bounce">
+              TREINADA ✓
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button

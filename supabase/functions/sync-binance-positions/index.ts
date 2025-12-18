@@ -87,14 +87,20 @@ serve(async (req) => {
       );
     }
 
-    // Descriptografar credenciais usando atob() - IGUAL sync-real-balance
+    // Descriptografar credenciais - IGUAL sync-real-balance (com remoção do prefixo)
     let apiKey: string;
     let apiSecret: string;
 
     try {
-      // Usar atob() para descriptografar - método correto
-      apiKey = atob(credentials.encrypted_api_key);
-      apiSecret = atob(credentials.encrypted_api_secret);
+      const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      
+      // Usar atob() e remover prefixo da masterKey se existir
+      const rawApiKey = atob(credentials.encrypted_api_key);
+      const rawApiSecret = atob(credentials.encrypted_api_secret);
+      
+      // Remover prefixo da master key (formato: "masterKey:realKey")
+      apiKey = rawApiKey.includes(':') ? rawApiKey.split(':').pop()! : rawApiKey;
+      apiSecret = rawApiSecret.includes(':') ? rawApiSecret.split(':').pop()! : rawApiSecret;
 
       if (!apiKey || !apiSecret) {
         throw new Error("Credenciais vazias após descriptografia");
