@@ -306,13 +306,10 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
+      console.log("🟡 Bot pausado");
       fetchBotStatus();
     } catch (error: any) {
-      toast({
-        title: "Erro ao pausar bot",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Erro ao pausar bot:", error.message);
     } finally {
       setLoading(false);
     }
@@ -330,13 +327,10 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
+      console.log("🔴 Bot parado");
       fetchBotStatus();
     } catch (error: any) {
-      toast({
-        title: "Erro ao parar bot",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Erro ao parar bot:", error.message);
     } finally {
       setLoading(false);
     }
@@ -347,6 +341,7 @@ export const BotControlPanel = () => {
     
     // 🔒 Bloquear ativação se modo REAL sem Binance conectada
     if (enabled && !botStatus.paperMode && !botStatus.binanceConnected) {
+      console.warn("⚠️ Tentativa de ativar Auto Trading sem Binance conectada");
       toast({
         title: "⚠️ Não é possível ativar Auto Trading",
         description: "Configure e valide suas credenciais Binance primeiro.",
@@ -365,13 +360,10 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
+      console.log(`⚡ Auto Trading ${enabled ? 'ativado' : 'desativado'}`);
       fetchBotStatus();
     } catch (error: any) {
-      toast({
-        title: "Erro ao alterar Auto Trading",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Erro ao alterar Auto Trading:", error.message);
     } finally {
       setAutoToggleLoading(false);
     }

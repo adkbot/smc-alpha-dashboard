@@ -35,7 +35,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Obter user_id do corpo ou do header de autorização
@@ -88,29 +87,22 @@ serve(async (req) => {
       );
     }
 
-    // Descriptografar credenciais
+    // Descriptografar credenciais usando atob() - IGUAL sync-real-balance
     let apiKey: string;
     let apiSecret: string;
 
     try {
-      const { data: decryptedKey } = await supabase.rpc('decrypt_data', {
-        encrypted_data: credentials.encrypted_api_key,
-        encryption_key: masterKey,
-      });
-      
-      const { data: decryptedSecret } = await supabase.rpc('decrypt_data', {
-        encrypted_data: credentials.encrypted_api_secret,
-        encryption_key: masterKey,
-      });
-
-      apiKey = decryptedKey?.replace(`${masterKey}:`, '') || '';
-      apiSecret = decryptedSecret?.replace(`${masterKey}:`, '') || '';
+      // Usar atob() para descriptografar - método correto
+      apiKey = atob(credentials.encrypted_api_key);
+      apiSecret = atob(credentials.encrypted_api_secret);
 
       if (!apiKey || !apiSecret) {
-        throw new Error("Falha na descriptografia");
+        throw new Error("Credenciais vazias após descriptografia");
       }
+      
+      console.log(`[SYNC-POSITIONS] ✅ Credenciais descriptografadas - API Key: ${apiKey.substring(0, 8)}...`);
     } catch (decryptError: any) {
-      console.error("[SYNC-POSITIONS] Erro ao descriptografar:", decryptError);
+      console.error("[SYNC-POSITIONS] Erro ao descriptografar:", decryptError.message);
       return new Response(
         JSON.stringify({ success: true, positions: [], message: "Erro de credenciais" }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -122,6 +114,8 @@ serve(async (req) => {
     const queryString = `timestamp=${timestamp}`;
     const signature = await createBinanceSignature(queryString, apiSecret);
 
+    console.log(`[SYNC-POSITIONS] Buscando posições na Binance FUTURES...`);
+
     const positionsResponse = await fetch(
       `https://fapi.binance.com/fapi/v2/positionRisk?${queryString}&signature=${signature}`,
       {
@@ -130,7 +124,8 @@ serve(async (req) => {
     );
 
     if (!positionsResponse.ok) {
-      console.error("[SYNC-POSITIONS] Erro da Binance:", await positionsResponse.text());
+      const errorText = await positionsResponse.text();
+      console.error("[SYNC-POSITIONS] Erro da Binance:", errorText);
       return new Response(
         JSON.stringify({ success: true, positions: [], message: "Erro ao consultar Binance" }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -144,7 +139,7 @@ serve(async (req) => {
       parseFloat(pos.positionAmt) !== 0
     );
 
-    console.log(`[SYNC-POSITIONS] Binance tem ${openPositions.length} posições abertas`);
+    console.log(`[SYNC-POSITIONS] ✅ Binance tem ${openPositions.length} posições abertas`);
 
     return new Response(
       JSON.stringify({
