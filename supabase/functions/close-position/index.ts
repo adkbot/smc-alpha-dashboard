@@ -104,7 +104,7 @@ function getTradingSession(): string {
   return 'NY';
 }
 
-// ==================== SISTEMA IA EVOLUTIVA ====================
+// ==================== SISTEMA IA EVOLUTIVA COM REPLAY BUFFER ====================
 
 interface TradeContext {
   sweepType: string;
@@ -114,9 +114,100 @@ interface TradeContext {
   sessionType: string;
   obStrength: number;
   rrRatio: number;
+  mtfAligned?: boolean;
+  waitedForConfirmation?: boolean;
+  consecutiveLosses?: number;
 }
 
-// Aplicar recompensa ao sistema de aprendizado
+interface RewardBreakdown {
+  total: number;
+  pnl: number;
+  discipline: number;
+  context: number;
+  penalties: number;
+  drawdown: number;
+}
+
+// 🎯 REWARD FUNCTION AVANÇADA (NÍVEL HUMANO)
+function calculateAdvancedReward(
+  resultado: 'WIN' | 'LOSS',
+  pnl: number,
+  rrAchieved: number,
+  contexto: TradeContext
+): RewardBreakdown {
+  // 1️⃣ PNL BASE (40% do peso)
+  const pnlReward = resultado === 'WIN' ? 1.0 : -1.0;
+  
+  // 2️⃣ BÔNUS DE DISCIPLINA (+0.5 cada)
+  let disciplineBonus = 0;
+  if (contexto.mtfAligned) disciplineBonus += 0.5;
+  if (rrAchieved >= 2.0) disciplineBonus += 0.5;
+  if (rrAchieved >= 3.0) disciplineBonus += 0.3;
+  if (contexto.waitedForConfirmation) disciplineBonus += 0.3;
+  
+  // 3️⃣ BÔNUS DE CONTEXTO (+0.3-0.4 cada)
+  let contextBonus = 0;
+  // Zona correta (discount pra LONG, premium pra SHORT)
+  if (contexto.zoneType === 'discount' || contexto.zoneType === 'premium') contextBonus += 0.3;
+  // Sweep antes da entrada
+  if (contexto.sweepType && contexto.sweepType !== 'none') contextBonus += 0.4;
+  // FVG presente
+  if (contexto.fvgType && contexto.fvgType !== 'none') contextBonus += 0.2;
+  // Estrutura confirmada
+  if (contexto.structureType && contexto.structureType !== 'none') contextBonus += 0.3;
+  
+  // 4️⃣ PENALIDADES (-0.5 a -1.0)
+  let penalties = 0;
+  // Revenge trading (múltiplos losses seguidos)
+  if (contexto.consecutiveLosses && contexto.consecutiveLosses >= 2) penalties -= 0.5;
+  if (contexto.consecutiveLosses && contexto.consecutiveLosses >= 3) penalties -= 0.8;
+  
+  // Sessão ruim (Oceania geralmente tem menos liquidez)
+  const badSessions = ['oceania'];
+  if (badSessions.includes(contexto.sessionType?.toLowerCase() || '')) penalties -= 0.2;
+  
+  // 5️⃣ DRAWDOWN PENALTY (baseado em OB strength como proxy)
+  let drawdownPenalty = 0;
+  if (contexto.obStrength && contexto.obStrength < 30) drawdownPenalty -= 0.3;
+  
+  // REWARD FINAL
+  const totalReward = pnlReward + (resultado === 'WIN' ? disciplineBonus + contextBonus : 0) + penalties + drawdownPenalty;
+  
+  return {
+    total: totalReward,
+    pnl: pnlReward,
+    discipline: disciplineBonus,
+    context: contextBonus,
+    penalties,
+    drawdown: drawdownPenalty,
+  };
+}
+
+// Calcular scores de qualidade (0-100)
+function calculateScores(contexto: TradeContext, rrAchieved: number): { discipline: number; context: number; quality: number } {
+  // Discipline score
+  let discipline = 50;
+  if (contexto.mtfAligned) discipline += 20;
+  if (rrAchieved >= 2) discipline += 15;
+  if (rrAchieved >= 3) discipline += 10;
+  if (contexto.waitedForConfirmation) discipline += 5;
+  discipline = Math.min(discipline, 100);
+  
+  // Context score
+  let context = 50;
+  if (contexto.sweepType && contexto.sweepType !== 'none') context += 15;
+  if (contexto.structureType && contexto.structureType !== 'none') context += 15;
+  if (contexto.fvgType && contexto.fvgType !== 'none') context += 10;
+  if (contexto.zoneType === 'discount' || contexto.zoneType === 'premium') context += 10;
+  context = Math.min(context, 100);
+  
+  // Entry quality (média ponderada)
+  const quality = (discipline * 0.5) + (context * 0.5);
+  
+  return { discipline, context, quality };
+}
+
+// Aplicar recompensa ao sistema de aprendizado + SALVAR NO REPLAY BUFFER
 async function aplicarRecompensa(
   supabase: any,
   userId: string,
@@ -126,14 +217,26 @@ async function aplicarRecompensa(
     entryPrice: number;
     exitPrice: number;
     pnl: number;
+    direction: string;
+    rrTarget: number;
   }
 ): Promise<void> {
   try {
-    // Construir padrao_id combinado
-    const padraoId = `${contexto.sweepType || 'none'}_${contexto.structureType || 'none'}_${contexto.fvgType || 'none'}_${contexto.zoneType || 'none'}_${contexto.sessionType}`;
-    const recompensa = resultado === 'WIN' ? 1.0 : -1.0;
+    // Construir padrao_id combinado (5 partes)
+    const padraoId = `${contexto.sweepType || 'none'}_${contexto.structureType || 'none'}_${contexto.fvgType || 'none'}_${contexto.zoneType || 'none'}_${contexto.sessionType?.toLowerCase() || 'unknown'}`;
     
-    console.log(`[IA-LEARNING] 🧠 Aplicando recompensa: ${recompensa > 0 ? '+1 (WIN)' : '-1 (LOSS)'} | Padrão: ${padraoId}`);
+    // Calcular RR atingido
+    const rrAchieved = resultado === 'WIN' ? operationData.rrTarget : 0;
+    
+    // 🎯 CALCULAR REWARD AVANÇADO
+    const rewardBreakdown = calculateAdvancedReward(resultado, operationData.pnl, rrAchieved, contexto);
+    const scores = calculateScores(contexto, rrAchieved);
+    
+    console.log(`[IA-LEARNING] 🧠 Aplicando recompensa avançada:`);
+    console.log(`  - Padrão: ${padraoId}`);
+    console.log(`  - Resultado: ${resultado} | PnL: $${operationData.pnl.toFixed(2)}`);
+    console.log(`  - Reward Total: ${rewardBreakdown.total.toFixed(2)} (PnL: ${rewardBreakdown.pnl}, Disc: ${rewardBreakdown.discipline.toFixed(2)}, Ctx: ${rewardBreakdown.context.toFixed(2)}, Pen: ${rewardBreakdown.penalties})`);
+    console.log(`  - Scores: Discipline=${scores.discipline}%, Context=${scores.context}%, Quality=${scores.quality}%`);
     
     // 1. Verificar se padrão já existe
     const { data: existingPattern } = await supabase
@@ -148,7 +251,7 @@ async function aplicarRecompensa(
       const newWins = resultado === 'WIN' ? existingPattern.wins + 1 : existingPattern.wins;
       const newLosses = resultado === 'LOSS' ? existingPattern.losses + 1 : existingPattern.losses;
       const newVezes = existingPattern.vezes_testado + 1;
-      const newRecompensa = existingPattern.recompensa_acumulada + recompensa;
+      const newRecompensa = existingPattern.recompensa_acumulada + rewardBreakdown.total;
       const newTaxaAcerto = newVezes > 0 ? (newWins / newVezes) * 100 : 50;
       
       await supabase
@@ -175,7 +278,7 @@ async function aplicarRecompensa(
         .insert({
           user_id: userId,
           padrao_id: padraoId,
-          recompensa_acumulada: recompensa,
+          recompensa_acumulada: rewardBreakdown.total,
           vezes_testado: 1,
           wins: newWins,
           losses: newLosses,
@@ -185,7 +288,7 @@ async function aplicarRecompensa(
       console.log(`[IA-LEARNING] ✅ Novo padrão criado: ${padraoId}`);
     }
     
-    // 2. Salvar contexto detalhado do trade
+    // 2. Salvar contexto detalhado do trade (ia_trade_context)
     await supabase
       .from('ia_trade_context')
       .insert({
@@ -197,12 +300,78 @@ async function aplicarRecompensa(
         zone_type: contexto.zoneType,
         session_type: contexto.sessionType,
         ob_strength: contexto.obStrength,
-        rr_ratio: contexto.rrRatio,
+        rr_ratio: rrAchieved,
         entry_price: operationData.entryPrice,
         exit_price: operationData.exitPrice,
         pnl: operationData.pnl,
         resultado: resultado,
       });
+    
+    // 3. 🆕 SALVAR NO REPLAY BUFFER (memória de experiências)
+    const state = {
+      sweep: contexto.sweepType,
+      structure: contexto.structureType,
+      fvg: contexto.fvgType,
+      zone: contexto.zoneType,
+      session: contexto.sessionType,
+      obStrength: contexto.obStrength,
+      mtfAligned: contexto.mtfAligned,
+    };
+    
+    const metadata = {
+      pattern_id: padraoId,
+      rr_target: operationData.rrTarget,
+      rr_achieved: rrAchieved,
+      mtfAligned: contexto.mtfAligned,
+      session: contexto.sessionType,
+    };
+    
+    // Determinar se é ELITE (RR >= 2.0, Discipline >= 80, WIN)
+    const isElite = resultado === 'WIN' && rrAchieved >= 2.0 && scores.discipline >= 80;
+    
+    const { data: savedExperience } = await supabase
+      .from('ia_replay_buffer')
+      .insert({
+        user_id: userId,
+        state,
+        action: operationData.direction,
+        reward: rewardBreakdown.total,
+        next_state: null,
+        done: true,
+        metadata,
+        pattern_id: padraoId,
+        entry_price: operationData.entryPrice,
+        exit_price: operationData.exitPrice,
+        pnl: operationData.pnl,
+        rr_achieved: rrAchieved,
+        entry_quality: scores.quality,
+        discipline_score: scores.discipline,
+        context_score: scores.context,
+        reward_breakdown: rewardBreakdown,
+        is_elite: isElite,
+        trade_result: resultado,
+        session_type: contexto.sessionType,
+      })
+      .select()
+      .single();
+    
+    console.log(`[IA-LEARNING] ✅ Experiência salva no Replay Buffer${isElite ? ' [ELITE]' : ''}`);
+    
+    // 4. 🆕 Se ELITE, salvar também no Elite Buffer
+    if (isElite && savedExperience) {
+      await supabase
+        .from('ia_elite_buffer')
+        .insert({
+          user_id: userId,
+          replay_buffer_id: savedExperience.id,
+          rr_achieved: rrAchieved,
+          discipline_score: scores.discipline,
+          mtf_aligned: contexto.mtfAligned || false,
+          training_weight: 2.0, // Elite tem 2x peso no treino
+        });
+      
+      console.log(`[IA-LEARNING] 🌟 Trade ELITE salvo no Elite Buffer (RR: ${rrAchieved.toFixed(1)}, Discipline: ${scores.discipline}%)`);
+    }
     
     console.log(`[IA-LEARNING] ✅ Contexto do trade salvo para treinamento`);
     
@@ -408,6 +577,8 @@ serve(async (req) => {
         sessionType: position.session || getTradingSession(),
         obStrength: position.agents?.ob_strength || 0,
         rrRatio: position.risk_reward || 0,
+        mtfAligned: position.agents?.mtf_aligned || false,
+        waitedForConfirmation: position.agents?.waited_confirmation || true,
       };
       
       await aplicarRecompensa(
@@ -419,6 +590,8 @@ serve(async (req) => {
           entryPrice: position.entry_price,
           exitPrice: exitPrice,
           pnl: finalPnL,
+          direction: position.direction,
+          rrTarget: position.risk_reward || 3,
         }
       );
     }

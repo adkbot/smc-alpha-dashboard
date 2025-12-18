@@ -321,12 +321,25 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 🧠 VERIFICAÇÃO DE PADRÕES DA IA LEARNING
+    // 🧠 VERIFICAÇÃO DE PADRÕES DA IA LEARNING + CONFIANÇA
     // ========================================
     const currentSession = getTradingSession();
     const currentPattern = generatePatternId(signal_data || {}, currentSession);
     
     console.log(`[IA-LEARNING] 🧠 Verificando padrão: "${currentPattern}"`);
+
+    // 🔐 VERIFICAR MODELO DE IA E CONFIANÇA
+    const MIN_CONFIDENCE = 85; // Mínimo 85% de confiança para operar
+    
+    const { data: currentModel } = await supabase
+      .from('ia_model_weights')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_current', true)
+      .single();
+
+    // Calcular confiança do setup atual
+    let setupConfidence = 50; // Base
     
     // Consultar se padrão está na lista de padrões aprendidos
     const { data: learnedPattern } = await supabase
@@ -345,6 +358,10 @@ serve(async (req) => {
       console.log(`[IA-LEARNING] 📊 Padrão encontrado: "${currentPattern}"`);
       console.log(`[IA-LEARNING] Win Rate: ${winRate.toFixed(1)}% (${learnedPattern.wins}W / ${learnedPattern.losses}L em ${learnedPattern.vezes_testado} trades)`);
       console.log(`[IA-LEARNING] Recompensa acumulada: ${learnedPattern.recompensa_acumulada?.toFixed(2) || 0}`);
+      
+      // Calcular confiança baseada no padrão
+      if (winRate > 60 && learnedPattern.vezes_testado >= 5) setupConfidence += 20;
+      else if (winRate > 50 && learnedPattern.vezes_testado >= 3) setupConfidence += 10;
       
       // 🚫 BLOQUEAR se win rate < 40% E pelo menos 3 trades históricos
       if (winRate < 40 && learnedPattern.vezes_testado >= 3) {
@@ -372,6 +389,7 @@ serve(async (req) => {
       // ⚠️ ALERTA se win rate entre 40-50%
       if (winRate >= 40 && winRate < 50) {
         console.log(`[IA-LEARNING] ⚠️ CUIDADO: Padrão com histórico mediano (${winRate.toFixed(1)}%)`);
+        setupConfidence -= 5;
       }
       
       // ✅ APROVADO se win rate >= 50%
@@ -430,6 +448,69 @@ serve(async (req) => {
       }
       
       console.log(`[IA-LEARNING] ✅ Nenhum padrão similar ruim encontrado - permitindo trade`);
+    }
+
+    // Adicionar bônus de confiança baseado em signal_data
+    if (signal_data?.mtfAlignment?.aligned) setupConfidence += 10;
+    if (signal_data?.liquiditySweep && signal_data?.bosChoch) setupConfidence += 10;
+    if (signal_data?.premiumDiscount?.zone === 'discount' && direction === 'LONG') setupConfidence += 5;
+    if (signal_data?.premiumDiscount?.zone === 'premium' && direction === 'SHORT') setupConfidence += 5;
+    if (risk_reward >= 3.0) setupConfidence += 5;
+    if (risk_reward >= 4.0) setupConfidence += 5;
+    
+    // Limitar confiança
+    setupConfidence = Math.min(setupConfidence, 100);
+    
+    console.log(`[IA-TRADING] 📊 Confiança calculada do setup: ${setupConfidence.toFixed(1)}%`);
+    
+    // 🔐 BLOQUEIO DE SEGURANÇA: Confiança mínima
+    if (setupConfidence < MIN_CONFIDENCE) {
+      console.log(`[IA-TRADING] ❌ HOLD - Confiança ${setupConfidence.toFixed(0)}% < ${MIN_CONFIDENCE}%`);
+      
+      await supabase.from('agent_logs').insert({
+        user_id: user.id,
+        agent_name: 'IA_CONFIDENCE_FILTER',
+        status: 'HOLD',
+        asset,
+        data: {
+          pattern: currentPattern,
+          setupConfidence,
+          minRequired: MIN_CONFIDENCE,
+          reason: 'Insufficient confidence for trade execution',
+        },
+      });
+      
+      throw new Error(`IA: Confiança insuficiente (${setupConfidence.toFixed(0)}% < ${MIN_CONFIDENCE}%). Aguardando setup melhor.`);
+    }
+    
+    console.log(`[IA-TRADING] ✅ Confiança ${setupConfidence.toFixed(0)}% >= ${MIN_CONFIDENCE}% - APROVADO`);
+
+    // Verificar se modelo está aprovado para produção (modo real)
+    const { data: userSettings } = await supabase
+      .from('user_settings')
+      .select('paper_mode')
+      .eq('user_id', user.id)
+      .single();
+    
+    const isPaperMode = userSettings?.paper_mode !== false;
+    
+    if (!isPaperMode && currentModel && !currentModel.is_production) {
+      console.log(`[IA-TRADING] ⚠️ Modelo não aprovado para produção real`);
+      
+      await supabase.from('agent_logs').insert({
+        user_id: user.id,
+        agent_name: 'IA_PRODUCTION_CHECK',
+        status: 'BLOCKED',
+        asset,
+        data: {
+          modelVersion: currentModel.version,
+          modelConfidence: currentModel.confidence_level,
+          isProduction: currentModel.is_production,
+          reason: 'Model not approved for production',
+        },
+      });
+      
+      throw new Error('IA: Modelo ainda em fase de validação. Use modo simulado (Paper Mode) ou aguarde aprovação do modelo para produção.');
     }
 
     // 1. Validar bot_status e configurações
