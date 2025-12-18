@@ -85,25 +85,28 @@ function detectTrend(candles: Candle[], index: number): 'bullish' | 'bearish' | 
   return 'neutral';
 }
 
-// Detectar sweep de liquidez
+// Detectar sweep de liquidez (MELHORADO: verifica últimos 5 candles)
 function detectSweep(candles: Candle[], index: number): 'high' | 'low' | 'none' {
   if (index < 30) return 'none';
   
-  const lookback = candles.slice(index - 30, index);
-  const current = candles[index];
+  const lookback = candles.slice(index - 30, index - 5);
+  const recentCandles = candles.slice(index - 5, index + 1);
   
-  // Encontrar swing high/low
+  // Encontrar swing high/low do período anterior
   const swingHigh = Math.max(...lookback.map(c => c.high));
   const swingLow = Math.min(...lookback.map(c => c.low));
   
-  // Sweep high: price vai acima do swing high e fecha abaixo
-  if (current.high > swingHigh && current.close < swingHigh) {
-    return 'high';
-  }
-  
-  // Sweep low: price vai abaixo do swing low e fecha acima
-  if (current.low < swingLow && current.close > swingLow) {
-    return 'low';
+  // Verificar sweep nos últimos 5 candles (não só no atual)
+  for (const candle of recentCandles) {
+    // Sweep high: price vai acima do swing high e fecha abaixo
+    if (candle.high > swingHigh && candle.close < swingHigh) {
+      return 'high';
+    }
+    
+    // Sweep low: price vai abaixo do swing low e fecha acima
+    if (candle.low < swingLow && candle.close > swingLow) {
+      return 'low';
+    }
   }
   
   return 'none';
@@ -172,22 +175,36 @@ function findSwingPoints(candles: Candle[]): { highs: { price: number; index: nu
   return { highs, lows };
 }
 
-// Detectar FVG
+// Detectar FVG (RELAXADO: aceita gaps menores e considera contexto)
 function detectFVG(candles: Candle[], index: number): 'bullish' | 'bearish' | 'none' {
   if (index < 3) return 'none';
   
   const c1 = candles[index - 2];
   const c2 = candles[index - 1];
   const c3 = candles[index];
+  const avgPrice = (c1.close + c2.close + c3.close) / 3;
+  const minGap = avgPrice * 0.0005; // Gap mínimo de 0.05% do preço
   
   // Bullish FVG: gap entre high de c1 e low de c3
-  if (c1.high < c3.low) {
+  const bullishGap = c3.low - c1.high;
+  if (bullishGap > minGap) {
     return 'bullish';
   }
   
   // Bearish FVG: gap entre low de c1 e high de c3
-  if (c1.low > c3.high) {
+  const bearishGap = c1.low - c3.high;
+  if (bearishGap > minGap) {
     return 'bearish';
+  }
+  
+  // FVG parcial: candle do meio tem corpo grande na direção
+  const c2Body = Math.abs(c2.close - c2.open);
+  const c2Range = c2.high - c2.low;
+  const isStrongCandle = c2Body > c2Range * 0.6; // Corpo > 60% do range
+  
+  if (isStrongCandle) {
+    if (c2.close > c2.open && c3.low > c1.close) return 'bullish';
+    if (c2.close < c2.open && c3.high < c1.close) return 'bearish';
   }
   
   return 'none';
@@ -223,23 +240,44 @@ function analyzeSMCState(candles: Candle[], index: number): SMCState {
   };
 }
 
-// Verificar se setup é válido
-function isValidSetup(state: SMCState, direction: 'LONG' | 'SHORT'): boolean {
+// Verificar se setup é válido (SISTEMA DE PONTUAÇÃO FLEXÍVEL)
+function isValidSetup(state: SMCState, direction: 'LONG' | 'SHORT'): { valid: boolean; score: number } {
+  let score = 0;
+  
   if (direction === 'LONG') {
-    return (
-      state.sweep === 'low' &&
-      (state.structure === 'choch_up' || state.structure === 'bos_up') &&
-      state.fvg === 'bullish' &&
-      state.zone === 'discount'
-    );
+    // Sweep de liquidez (25 pontos)
+    if (state.sweep === 'low') score += 25;
+    
+    // Estrutura bullish (30 pontos)
+    if (state.structure === 'choch_up') score += 30;
+    else if (state.structure === 'bos_up') score += 25;
+    
+    // FVG bullish (25 pontos)
+    if (state.fvg === 'bullish') score += 25;
+    
+    // Zona discount (15 pontos)
+    if (state.zone === 'discount') score += 15;
+    else if (state.zone === 'equilibrium') score += 5;
+    
+    // Tendência bullish (bonus 10 pontos)
+    if (state.trend === 'bullish') score += 10;
   } else {
-    return (
-      state.sweep === 'high' &&
-      (state.structure === 'choch_down' || state.structure === 'bos_down') &&
-      state.fvg === 'bearish' &&
-      state.zone === 'premium'
-    );
+    // SHORT - critérios inversos
+    if (state.sweep === 'high') score += 25;
+    
+    if (state.structure === 'choch_down') score += 30;
+    else if (state.structure === 'bos_down') score += 25;
+    
+    if (state.fvg === 'bearish') score += 25;
+    
+    if (state.zone === 'premium') score += 15;
+    else if (state.zone === 'equilibrium') score += 5;
+    
+    if (state.trend === 'bearish') score += 10;
   }
+  
+  // Válido se tiver pelo menos 40 pontos (mínimo 2 critérios relevantes)
+  return { valid: score >= 40, score };
 }
 
 // Gerar padrão ID
@@ -392,13 +430,29 @@ serve(async (req) => {
     console.log(`[ia-historical-training] Treinamento: índice 50 a ${trainingEnd}, Validação: ${validationStart} a ${mainCandles.length - 100}`);
 
     // ========== FASE 1: TREINAMENTO (80%) ==========
+    // Contadores de estados SMC para debug
+    let smcStats = { sweepHigh: 0, sweepLow: 0, bosUp: 0, bosDown: 0, chochUp: 0, chochDown: 0, fvgBull: 0, fvgBear: 0, premium: 0, discount: 0 };
+    
     for (let i = 50; i < trainingEnd; i++) {
       const currentCandle = mainCandles[i];
       const state = analyzeSMCState(mainCandles, i);
       const session = getTradingSession(currentCandle.time);
       
+      // Contabilizar estados para debug
+      if (state.sweep === 'high') smcStats.sweepHigh++;
+      if (state.sweep === 'low') smcStats.sweepLow++;
+      if (state.structure === 'bos_up') smcStats.bosUp++;
+      if (state.structure === 'bos_down') smcStats.bosDown++;
+      if (state.structure === 'choch_up') smcStats.chochUp++;
+      if (state.structure === 'choch_down') smcStats.chochDown++;
+      if (state.fvg === 'bullish') smcStats.fvgBull++;
+      if (state.fvg === 'bearish') smcStats.fvgBear++;
+      if (state.zone === 'premium') smcStats.premium++;
+      if (state.zone === 'discount') smcStats.discount++;
+      
       // Verificar setup LONG
-      if (isValidSetup(state, 'LONG')) {
+      const longSetup = isValidSetup(state, 'LONG');
+      if (longSetup.valid) {
         setupsDetected++;
         
         // Calcular entry, SL, TP
@@ -439,8 +493,8 @@ serve(async (req) => {
           if (result === 'WIN') wins++;
           else losses++;
           
-          // Calcular recompensa
-          const entryQuality = state.zone === 'discount' ? 1 : 0.5;
+          // Calcular recompensa (usar score do setup como qualidade)
+          const entryQuality = longSetup.score / 100;
           const reward = calculateReward(result, rrAchieved, mtfAligned, entryQuality);
           
           // Acumular para o padrão
@@ -457,7 +511,8 @@ serve(async (req) => {
       }
       
       // Verificar setup SHORT
-      if (isValidSetup(state, 'SHORT')) {
+      const shortSetup = isValidSetup(state, 'SHORT');
+      if (shortSetup.valid) {
         setupsDetected++;
         
         const entry = currentCandle.close;
@@ -495,7 +550,7 @@ serve(async (req) => {
           if (result === 'WIN') wins++;
           else losses++;
           
-          const entryQuality = state.zone === 'premium' ? 1 : 0.5;
+          const entryQuality = shortSetup.score / 100;
           const reward = calculateReward(result, rrAchieved, mtfAligned, entryQuality);
           
           if (!patternRewards.has(pattern)) {
@@ -510,6 +565,13 @@ serve(async (req) => {
         }
       }
     }
+
+    // Log de estados SMC detectados
+    console.log(`[ia-historical-training] Estados SMC detectados:`);
+    console.log(`  Sweeps: High=${smcStats.sweepHigh}, Low=${smcStats.sweepLow}`);
+    console.log(`  Estruturas: BOS_UP=${smcStats.bosUp}, BOS_DOWN=${smcStats.bosDown}, CHOCH_UP=${smcStats.chochUp}, CHOCH_DOWN=${smcStats.chochDown}`);
+    console.log(`  FVGs: Bullish=${smcStats.fvgBull}, Bearish=${smcStats.fvgBear}`);
+    console.log(`  Zonas: Premium=${smcStats.premium}, Discount=${smcStats.discount}`);
 
     // ========== FASE 2: VALIDAÇÃO (20%) COM IA TREINADA ==========
     let validationWins = 0;
@@ -533,10 +595,13 @@ serve(async (req) => {
       const learnedWinRate = learned.wins / (learned.wins + learned.losses);
       if (learnedWinRate < 0.55) continue; // Ignorar padrões ruins
 
-      // Verificar setup válido
+      // Verificar setup válido (usando sistema de pontuação)
       let direction: 'LONG' | 'SHORT' | null = null;
-      if (isValidSetup(state, 'LONG')) direction = 'LONG';
-      else if (isValidSetup(state, 'SHORT')) direction = 'SHORT';
+      const longCheck = isValidSetup(state, 'LONG');
+      const shortCheck = isValidSetup(state, 'SHORT');
+      
+      if (longCheck.valid) direction = 'LONG';
+      else if (shortCheck.valid) direction = 'SHORT';
       
       if (!direction) continue;
 
