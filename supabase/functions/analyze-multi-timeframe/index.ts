@@ -201,8 +201,32 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE SYSTEM
+// ==================== 🆕 CAMADA 1: CONTEXT ENGINE ====================
+
+interface TradingContext {
+  ready: boolean;
+  bias: "BULL" | "BEAR" | "RANGE" | null;
+  biasStrength: "FORTE" | "MODERADO" | "FRACO";
+  rangeHigh: number;
+  rangeLow: number;
+  session: "OCEANIA" | "ASIA" | "LONDON" | "NY";
+}
+
+// ==================== 🆕 CAMADA 3: DECISION ENGINE ====================
+
+interface TradeDecision {
+  execute: boolean;
+  reason: string;
+  confluenceScore: number;
+  patternScore: number;
+  combinedScore: number;
+}
+
+// PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE SYSTEM (CAMADA 2: SETUPS)
 interface TraderRaizChecklist {
+  // 🆕 CONTEXTO (Camada 1)
+  context: TradingContext;
+  
   // Critério 1: Sweep detectado
   sweepDetected: boolean;
   sweepType: "sweep_low" | "sweep_high" | null;
@@ -247,7 +271,10 @@ interface TraderRaizChecklist {
   confluencePercentage: number;
   confluenceFactors: string[];
   
-  // Resultado final
+  // 🆕 DECISION ENGINE (Camada 3)
+  decision: TradeDecision;
+  
+  // Resultado final (legacy, agora vem do decision)
   criteriaCount: number;
   allCriteriaMet: boolean;
   conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
@@ -1123,6 +1150,120 @@ function calculateConfluenceScore(
   return { score, maxScore, percentage, factors };
 }
 
+// ==================== 🆕 CAMADA 1: BUILD TRADING CONTEXT ====================
+
+function buildTradingContext(
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  premiumDiscount: PremiumDiscountResult
+): TradingContext {
+  const biasMap = {
+    "ALTA": "BULL",
+    "BAIXA": "BEAR",
+    "NEUTRO": "RANGE",
+    "MISTO": null
+  } as const;
+  
+  const bias = dominantBias.bias !== "MISTO" ? biasMap[dominantBias.bias] : null;
+  const session = getTradingSession() as "OCEANIA" | "ASIA" | "LONDON" | "NY";
+  
+  return {
+    ready: bias !== null && dominantBias.strength !== "FRACO",
+    bias,
+    biasStrength: dominantBias.strength as "FORTE" | "MODERADO" | "FRACO",
+    rangeHigh: premiumDiscount.rangeHigh,
+    rangeLow: premiumDiscount.rangeLow,
+    session,
+  };
+}
+
+// ==================== 🆕 CAMADA 3: DECISION ENGINE ====================
+
+function makeTradeDecision(
+  context: TradingContext,
+  setupsAligned: boolean,
+  confluenceScore: number,
+  patternScore: number,
+  riskReward: number
+): TradeDecision {
+  // 1. Contexto precisa estar pronto
+  if (!context.ready || !context.bias) {
+    return { 
+      execute: false, 
+      reason: "⏸️ Contexto indefinido - aguardar bias", 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 2. Setup precisa estar alinhado com bias
+  if (!setupsAligned) {
+    return { 
+      execute: false, 
+      reason: "⏸️ Setup contra o bias dominante", 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 3. R:R mínimo de 2.5:1
+  if (riskReward < 2.5) {
+    return { 
+      execute: false, 
+      reason: `⏸️ R:R ${riskReward.toFixed(1)} < 2.5`, 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 4. Calcular score combinado
+  // Confluence (0-10) → 0-50 pontos
+  // Pattern (0-100) → 0-50 pontos
+  const confluenceNormalized = (confluenceScore / 10) * 50;
+  const patternNormalized = (patternScore / 100) * 50;
+  const combinedScore = confluenceNormalized + patternNormalized;
+  
+  // 5. Decisão final baseada em score combinado
+  const MIN_COMBINED_SCORE = 55; // 55% do máximo
+  
+  if (combinedScore >= MIN_COMBINED_SCORE) {
+    return { 
+      execute: true, 
+      reason: `✅ Score ${combinedScore.toFixed(0)}/100 - EXECUTAR`,
+      confluenceScore, 
+      patternScore, 
+      combinedScore 
+    };
+  }
+  
+  // 6. Exceções inteligentes
+  // Alta confluência (8+) compensa pattern baixo
+  if (confluenceScore >= 8.0 && patternScore >= 50) {
+    return { 
+      execute: true, 
+      reason: "✅ Confluência ALTA compensa Pattern",
+      confluenceScore, patternScore, combinedScore 
+    };
+  }
+  
+  // Pattern ELITE (90+) compensa confluência média
+  if (patternScore >= 90 && confluenceScore >= 4.0) {
+    return { 
+      execute: true, 
+      reason: "✅ Padrão ELITE compensa Confluência",
+      confluenceScore, patternScore, combinedScore 
+    };
+  }
+  
+  return { 
+    execute: false, 
+    reason: `⏸️ HOLD - Score ${combinedScore.toFixed(0)}/100 < ${MIN_COMBINED_SCORE}`,
+    confluenceScore, patternScore, combinedScore 
+  };
+}
+
 // ==================== PRE-LIST TRADE RAIZ (CONFLUENCE-BASED) ====================
 
 function calculateTraderRaizChecklist(
@@ -1136,6 +1277,9 @@ function calculateTraderRaizChecklist(
   pois: POI[],
   sweep: SweepDetection
 ): TraderRaizChecklist {
+  
+  // 🆕 CAMADA 1: BUILD CONTEXT
+  const context = buildTradingContext(dominantBias, premiumDiscount);
   
   // 🆕 CALCULAR CONFLUENCE SCORE
   const confluence = calculateConfluenceScore(
@@ -1172,23 +1316,31 @@ function calculateTraderRaizChecklist(
   const rrValue = bestPOI?.riskReward || 0;
   const riskRewardValid = rrValue >= 2.5;
   
-  // ========== 🆕 CONCLUSÃO BASEADA EM CONFLUENCE SCORE ==========
-  // Score >= 6.0 (60%) → ENTRADA VÁLIDA
-  // Score >= 4.0 (40%) → AGUARDAR
-  // Score < 4.0 → ANULAR
-  let allCriteriaMet = false;
+  // 🆕 VERIFICAR SE SETUPS ESTÃO ALINHADOS COM CONTEXTO
+  const setupsAligned = context.ready && (
+    (context.bias === "BULL" && premiumDiscount.status === "DISCOUNT") ||
+    (context.bias === "BEAR" && premiumDiscount.status === "PREMIUM") ||
+    (context.bias === "RANGE" && (premiumDiscount.status === "DISCOUNT" || premiumDiscount.status === "PREMIUM"))
+  );
+  
+  // 🆕 CAMADA 3: DECISION ENGINE (usa PatternScore padrão de 50 se não tiver IA)
+  const patternScoreDefault = 50;
+  const decision = makeTradeDecision(
+    context,
+    setupsAligned,
+    confluence.score,
+    patternScoreDefault,
+    rrValue
+  );
+  
+  // 🆕 CONCLUSÃO AGORA VEM DO DECISION ENGINE
+  let allCriteriaMet = decision.execute;
   let conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
   
-  if (confluence.score >= 6.0 && riskRewardValid) {
+  if (decision.execute) {
     conclusion = "ENTRADA VÁLIDA";
-    allCriteriaMet = true;
-  } else if (confluence.score >= 4.0) {
+  } else if (confluence.score >= 4.0 || context.ready) {
     conclusion = "AGUARDAR";
-    // Exceção: Score alto (8+) pode compensar R:R menor
-    if (confluence.score >= 8.0 && rrValue >= 2.0) {
-      conclusion = "ENTRADA VÁLIDA";
-      allCriteriaMet = true;
-    }
   } else {
     conclusion = "ANULAR";
   }
@@ -1206,9 +1358,13 @@ function calculateTraderRaizChecklist(
     ? confluence.factors.join(" | ") 
     : "Sem fatores de confluência";
   
-  console.log(`[CHECKLIST] Confluência: ${confluence.score.toFixed(1)}/10 | R:R: ${rrValue.toFixed(1)} | Conclusão: ${conclusion}`);
+  console.log(`[CONTEXT] Ready: ${context.ready} | Bias: ${context.bias} | Session: ${context.session}`);
+  console.log(`[DECISION] ${decision.reason} | Combined: ${decision.combinedScore.toFixed(0)}/100`);
   
   return {
+    // 🆕 CONTEXTO (Camada 1)
+    context,
+    
     // 5 critérios originais (para UI)
     sweepDetected,
     sweepType: sweep.type,
@@ -1244,6 +1400,9 @@ function calculateTraderRaizChecklist(
     confluenceMaxScore: confluence.maxScore,
     confluencePercentage: confluence.percentage,
     confluenceFactors: confluence.factors,
+    
+    // 🆕 DECISION ENGINE (Camada 3)
+    decision,
     
     criteriaCount,
     allCriteriaMet,

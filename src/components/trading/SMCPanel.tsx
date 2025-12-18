@@ -741,243 +741,199 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         </div>
       )}
 
-      {/* PRE-LIST TRADER RAIZ - STATUS DO CHECKLIST */}
+      {/* 🆕 3 CAMADAS: CONTEXT + SETUPS + DECISION */}
       {mtfData?.checklist && (
-        <div className={`p-4 border-b-2 ${
-          mtfData.checklist.conclusion === "ENTRADA VÁLIDA" 
-            ? "border-success bg-success/5" 
-            : mtfData.checklist.conclusion === "AGUARDAR"
-            ? "border-warning bg-warning/5"
-            : "border-destructive bg-destructive/5"
-        }`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-              📋 CONFLUENCE SCORE
-            </h3>
-            <Badge className={`text-xs font-bold ${
-              mtfData.checklist.conclusion === "ENTRADA VÁLIDA"
-                ? "bg-success"
-                : mtfData.checklist.conclusion === "AGUARDAR"
-                ? "bg-warning text-warning-foreground"
-                : "bg-destructive"
-            }`}>
-              {(mtfData.checklist.confluenceScore || 0).toFixed(1)}/10
-            </Badge>
-          </div>
-
-          {/* 🆕 CONFLUENCE SCORE BAR */}
-          <Card className="p-3 mb-3 bg-card/50 border">
+        <div className="border-b-2 border-primary">
+          {/* 🔷 CAMADA 1: CONTEXTO */}
+          <div className={`p-3 border-b ${
+            mtfData.checklist.context?.ready 
+              ? "bg-primary/10" 
+              : "bg-muted/50"
+          }`}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">Score de Confluência</span>
-              <span className={`text-sm font-bold ${
-                (mtfData.checklist.confluencePercentage || 0) >= 60 
-                  ? "text-success" 
-                  : (mtfData.checklist.confluencePercentage || 0) >= 40
-                  ? "text-warning"
-                  : "text-destructive"
-              }`}>
-                {(mtfData.checklist.confluencePercentage || 0).toFixed(0)}%
-              </span>
+              <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                🔷 CAMADA 1: CONTEXTO
+              </h3>
+              <Badge variant={mtfData.checklist.context?.ready ? "default" : "secondary"}>
+                {mtfData.checklist.context?.ready ? "PRONTO" : "AGUARDANDO"}
+              </Badge>
             </div>
             
-            {/* Progress Bar */}
-            <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-2">
-              <div 
-                className={`h-full transition-all duration-500 ${
-                  (mtfData.checklist.confluencePercentage || 0) >= 60 
-                    ? "bg-success" 
-                    : (mtfData.checklist.confluencePercentage || 0) >= 40
-                    ? "bg-warning"
-                    : "bg-destructive"
-                }`}
-                style={{ width: `${Math.min(mtfData.checklist.confluencePercentage || 0, 100)}%` }}
-              />
-            </div>
-            
-            {/* Thresholds */}
-            <div className="flex justify-between text-[9px] text-muted-foreground">
-              <span>0 (Anular)</span>
-              <span>40% (Aguardar)</span>
-              <span>60% (Entrada)</span>
-              <span>100%</span>
-            </div>
-            
-            {/* Fatores de Confluência */}
-            {mtfData.checklist.confluenceFactors && mtfData.checklist.confluenceFactors.length > 0 && (
-              <div className="mt-3 pt-2 border-t border-border">
-                <div className="text-[9px] text-muted-foreground mb-1">Fatores ativos:</div>
-                <div className="flex flex-wrap gap-1">
-                  {mtfData.checklist.confluenceFactors.map((factor, i) => (
-                    <Badge key={i} variant="outline" className="text-[8px] py-0 px-1">
-                      {factor}
-                    </Badge>
-                  ))}
+            <div className="grid grid-cols-3 gap-2">
+              <Card className="p-2 bg-card/50">
+                <div className="text-[9px] text-muted-foreground">BIAS</div>
+                <div className={`text-sm font-bold ${
+                  mtfData.checklist.context?.bias === "BULL" ? "text-success" :
+                  mtfData.checklist.context?.bias === "BEAR" ? "text-destructive" :
+                  "text-muted-foreground"
+                }`}>
+                  {mtfData.checklist.context?.bias || "—"}
                 </div>
-              </div>
-            )}
-          </Card>
-
-          {/* BANNER VISUAL DE ZONA DE OPERAÇÃO */}
-          {realtimeStatus && (
-            <Card className={`p-3 mb-3 border-2 ${
-              realtimeStatus === "PREMIUM" 
-                ? "bg-destructive/20 border-destructive" 
-                : realtimeStatus === "DISCOUNT"
-                ? "bg-success/20 border-success"
-                : "bg-muted border-muted-foreground/30"
-            }`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className={`text-sm font-bold ${
-                    realtimeStatus === "PREMIUM" 
-                      ? "text-destructive" 
-                      : realtimeStatus === "DISCOUNT"
-                      ? "text-success"
-                      : "text-muted-foreground"
-                  }`}>
-                    {realtimeStatus === "PREMIUM" && "📉 ZONA PREMIUM - REGIÃO DE VENDA"}
-                    {realtimeStatus === "DISCOUNT" && "📈 ZONA DISCOUNT - REGIÃO DE COMPRA"}
-                    {realtimeStatus === "EQUILIBRIUM" && "⚖️ ZONA EQUILÍBRIO - AGUARDAR"}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-1">
-                    {realtimeStatus === "PREMIUM" && "💰 Preço está CARO - Momento ideal para VENDER"}
-                    {realtimeStatus === "DISCOUNT" && "💰 Preço está BARATO - Momento ideal para COMPRAR"}
-                    {realtimeStatus === "EQUILIBRIUM" && "Aguardar movimento para zona extrema"}
-                  </div>
+              </Card>
+              
+              <Card className="p-2 bg-card/50">
+                <div className="text-[9px] text-muted-foreground">FORÇA</div>
+                <div className="text-sm font-bold">
+                  {mtfData.checklist.context?.biasStrength || "—"}
                 </div>
-                <div className={`text-2xl font-bold ${
-                  realtimeStatus === "PREMIUM" 
-                    ? "text-destructive" 
-                    : realtimeStatus === "DISCOUNT"
-                    ? "text-success"
+              </Card>
+              
+              <Card className="p-2 bg-card/50">
+                <div className="text-[9px] text-muted-foreground">SESSÃO</div>
+                <div className={`text-sm font-bold ${
+                  mtfData.checklist.context?.session === "LONDON" || mtfData.checklist.context?.session === "NY" 
+                    ? "text-accent" 
                     : "text-muted-foreground"
                 }`}>
-                  {realtimeStatus === "PREMIUM" && "🔴"}
-                  {realtimeStatus === "DISCOUNT" && "🟢"}
-                  {realtimeStatus === "EQUILIBRIUM" && "⚪"}
+                  {mtfData.checklist.context?.session || "—"}
+                </div>
+              </Card>
+            </div>
+            
+            <div className="text-[9px] text-muted-foreground mt-2 text-center">
+              Range: ${mtfData.checklist.context?.rangeLow?.toFixed(2) || "—"} - ${mtfData.checklist.context?.rangeHigh?.toFixed(2) || "—"}
+            </div>
+          </div>
+          
+          {/* 🔷 CAMADA 2: SETUPS (Informativos) */}
+          <div className="p-3 border-b bg-secondary/30">
+            <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1 mb-2">
+              🔷 CAMADA 2: SETUPS DETECTADOS
+            </h3>
+            
+            <div className="flex flex-wrap gap-1 mb-2">
+              {mtfData.checklist.sweepDetected && (
+                <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
+                  ✓ Sweep {mtfData.checklist.sweepType}
+                </Badge>
+              )}
+              {mtfData.checklist.fvgPresent && (
+                <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
+                  ✓ FVG {mtfData.checklist.fvgType}
+                </Badge>
+              )}
+              {mtfData.checklist.structureConfirmed && (
+                <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
+                  ✓ {mtfData.checklist.structureType}
+                </Badge>
+              )}
+              {mtfData.checklist.zoneCorrect && (
+                <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
+                  ✓ Zona {mtfData.checklist.zoneName}
+                </Badge>
+              )}
+              {mtfData.checklist.orderBlockLocated && (
+                <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
+                  ✓ Order Block
+                </Badge>
+              )}
+              {!mtfData.checklist.sweepDetected && !mtfData.checklist.fvgPresent && !mtfData.checklist.structureConfirmed && (
+                <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                  Nenhum setup ativo
+                </Badge>
+              )}
+            </div>
+            
+            {/* Confluence Score Mini */}
+            <div className="flex items-center gap-2">
+              <div className="text-[9px] text-muted-foreground">Confluência:</div>
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    (mtfData.checklist.confluencePercentage || 0) >= 60 
+                      ? "bg-success" 
+                      : (mtfData.checklist.confluencePercentage || 0) >= 40
+                      ? "bg-warning"
+                      : "bg-destructive"
+                  }`}
+                  style={{ width: `${Math.min(mtfData.checklist.confluencePercentage || 0, 100)}%` }}
+                />
+              </div>
+              <div className="text-[9px] font-bold">
+                {(mtfData.checklist.confluenceScore || 0).toFixed(1)}/10
+              </div>
+            </div>
+          </div>
+          
+          {/* 🔷 CAMADA 3: DECISION ENGINE */}
+          <div className={`p-3 ${
+            mtfData.checklist.decision?.execute 
+              ? "bg-success/10" 
+              : mtfData.checklist.context?.ready
+              ? "bg-warning/10"
+              : "bg-destructive/10"
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                🔷 CAMADA 3: DECISÃO
+              </h3>
+              <Badge className={`text-xs font-bold ${
+                mtfData.checklist.decision?.execute
+                  ? "bg-success"
+                  : mtfData.checklist.context?.ready
+                  ? "bg-warning text-warning-foreground"
+                  : "bg-destructive"
+              }`}>
+                {mtfData.checklist.decision?.execute ? "EXECUTAR" : "HOLD"}
+              </Badge>
+            </div>
+            
+            {/* Combined Score Bar */}
+            <Card className="p-2 bg-card/50 border mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-muted-foreground">Score Combinado</span>
+                <span className={`text-sm font-bold ${
+                  (mtfData.checklist.decision?.combinedScore || 0) >= 55 
+                    ? "text-success" 
+                    : "text-warning"
+                }`}>
+                  {(mtfData.checklist.decision?.combinedScore || 0).toFixed(0)}/100
+                </span>
+              </div>
+              
+              <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    (mtfData.checklist.decision?.combinedScore || 0) >= 55 
+                      ? "bg-success" 
+                      : "bg-warning"
+                  }`}
+                  style={{ width: `${Math.min(mtfData.checklist.decision?.combinedScore || 0, 100)}%` }}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 text-[9px] mt-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Confluência:</span>
+                  <span className="font-bold">{(mtfData.checklist.decision?.confluenceScore || 0).toFixed(1)}/10</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Pattern:</span>
+                  <span className="font-bold">{mtfData.checklist.decision?.patternScore || 0}/100</span>
                 </div>
               </div>
-              {realtimePercentage !== null && (
-                <div className="text-[9px] text-muted-foreground mt-2 text-right">
-                  Posição no range: {realtimePercentage.toFixed(1)}%
-                </div>
-              )}
             </Card>
-          )}
-
-          {/* Princípio SMC */}
-          <div className="text-[9px] text-muted-foreground mb-3 text-center italic bg-muted/50 p-1.5 rounded">
-            💡 <span className="font-semibold">Princípio SMC:</span> Comprar BARATO (Discount), Vender CARO (Premium)
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {/* 1. Swings Mapeados */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.swingsMapped ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>Topos/Fundos ({mtfData.checklist.swingsCount})</span>
+            
+            {/* Decision Reason */}
+            <div className={`text-[10px] p-2 rounded border ${
+              mtfData.checklist.decision?.execute 
+                ? "bg-success/20 border-success/30 text-success" 
+                : "bg-muted border-border text-muted-foreground"
+            }`}>
+              {mtfData.checklist.decision?.reason || "Aguardando análise..."}
             </div>
             
-            {/* 2. Tendência */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.trendDefined ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>Tendência: {mtfData.checklist.trendDirection}</span>
-            </div>
-            
-            {/* 3. Estrutura */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.structureBroken ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>Estrutura: {mtfData.checklist.structureType || "N/A"}</span>
-            </div>
-            
-            {/* 4. Zona */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.zoneCorrect ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>
-                Zona: {mtfData.checklist.zoneName} 
-                {mtfData.checklist.zoneName === "PREMIUM" && " (Venda) 🔴"}
-                {mtfData.checklist.zoneName === "DISCOUNT" && " (Compra) 🟢"}
-                {mtfData.checklist.zoneName === "EQUILIBRIUM" && " ⚪"}
-              </span>
-            </div>
-            
-            {/* 5. Manipulação */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.manipulationIdentified ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <AlertCircle className="h-3 w-3 text-warning" />
-              )}
-              <span>Manipulação ({mtfData.checklist.manipulationZonesCount})</span>
-            </div>
-            
-            {/* 6. Order Block */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.orderBlockLocated ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>OB: {mtfData.checklist.orderBlockRange}</span>
-            </div>
-            
-            {/* 7. R:R */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.riskRewardValid ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>R:R 1:{mtfData.checklist.riskRewardValue.toFixed(1)}</span>
-            </div>
-            
-            {/* 8. Confirmação */}
-            <div className="flex items-center gap-1 text-[10px]">
-              {mtfData.checklist.entryConfirmed ? (
-                <CheckCircle className="h-3 w-3 text-success" />
-              ) : (
-                <XCircle className="h-3 w-3 text-destructive" />
-              )}
-              <span>Confirmação</span>
+            {/* R:R */}
+            <div className="flex items-center justify-between mt-2 text-[9px]">
+              <span className="text-muted-foreground">Risco/Retorno:</span>
+              <Badge variant={mtfData.checklist.riskRewardValid ? "default" : "secondary"}>
+                1:{mtfData.checklist.riskRewardValue?.toFixed(1) || "0"} {mtfData.checklist.riskRewardValid ? "✓" : "(min 2.5)"}
+              </Badge>
             </div>
           </div>
-          
-          {/* Conclusão */}
-          <Card className={`p-2 text-center ${
-            mtfData.checklist.conclusion === "ENTRADA VÁLIDA"
-              ? "bg-success/20 border-success"
-              : mtfData.checklist.conclusion === "AGUARDAR"
-              ? "bg-warning/20 border-warning"
-              : "bg-destructive/20 border-destructive"
-          }`}>
-            <div className="text-sm font-bold">
-              {mtfData.checklist.conclusion === "ENTRADA VÁLIDA" && "✅ ENTRADA VÁLIDA"}
-              {mtfData.checklist.conclusion === "AGUARDAR" && "⏳ AGUARDAR"}
-              {mtfData.checklist.conclusion === "ANULAR" && "❌ ANULAR"}
-            </div>
-            <div className="text-[9px] text-muted-foreground mt-1">
-              {mtfData.checklist.riskRewardValid 
-                ? `R:R 1:${mtfData.checklist.riskRewardValue.toFixed(1)} ✅ (ADKBOT)`
-                : "R:R < 5:1 - Mínimo ADKBOT não atingido"}
-            </div>
-          </Card>
         </div>
       )}
+
 
       {/* Active Signals - Apenas 2 cards: melhor COMPRA + melhor VENDA */}
       <div className="p-4 flex-1">
