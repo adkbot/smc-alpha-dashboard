@@ -30,6 +30,12 @@ interface PreTrainingReport {
     winRate: string;
     patternsLearned: number;
   };
+  validation?: {
+    wins: number;
+    losses: number;
+    winRate: string;
+    tradesValidated: number;
+  };
   topPatterns: { pattern: string; winRate: string; trades: number }[];
   worstPatterns: { pattern: string; winRate: string; trades: number }[];
   message: string;
@@ -356,6 +362,32 @@ export const IALearningPanel = () => {
           </div>
         )}
       </div>
+
+      {/* Contagem WINS/LOSSES Proeminente */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="bg-success/20 rounded-lg p-3 text-center border border-success/30">
+          <TrendingUp className="w-5 h-5 text-success mx-auto mb-1" />
+          <p className="text-2xl font-bold text-success">{totalWins}</p>
+          <p className="text-xs text-success/80">WINS</p>
+        </div>
+        <div className="bg-destructive/20 rounded-lg p-3 text-center border border-destructive/30">
+          <TrendingDown className="w-5 h-5 text-destructive mx-auto mb-1" />
+          <p className="text-2xl font-bold text-destructive">{totalLosses}</p>
+          <p className="text-xs text-destructive/80">LOSSES</p>
+        </div>
+      </div>
+
+      {/* Validação Pós-Treinamento */}
+      {preTrainingReport?.validation && (
+        <Alert className="mb-4 border-accent bg-accent/10">
+          <CheckCircle className="h-4 w-4 text-accent" />
+          <AlertTitle className="text-accent text-sm">Validação com IA Treinada (20% dados)</AlertTitle>
+          <AlertDescription className="text-accent/90 text-xs">
+            <span className="font-bold">{preTrainingReport.validation.wins}W</span> / <span className="font-bold">{preTrainingReport.validation.losses}L</span> 
+            {' '}({preTrainingReport.validation.winRate}% WR em {preTrainingReport.validation.tradesValidated} trades)
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Nível de Confiança Principal */}
       <div className="bg-muted/30 rounded-lg p-3 mb-4">
