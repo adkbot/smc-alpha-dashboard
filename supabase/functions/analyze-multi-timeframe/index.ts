@@ -1,10 +1,100 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// ==================== SISTEMA IA EVOLUTIVA ====================
+
+interface IALearningData {
+  padraoId: string;
+  taxaAcerto: number;
+  vezesTestado: number;
+  confianca: "ALTA" | "MEDIA" | "BAIXA" | "NEUTRO";
+  ajusteAplicado: string;
+}
+
+// Determinar sessão de trading atual
+function getTradingSession(): string {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  
+  if (utcHour >= 21 || utcHour < 6) return 'OCEANIA';
+  if (utcHour >= 6 && utcHour < 8) return 'ASIA';
+  if (utcHour >= 8 && utcHour < 13) return 'LONDON';
+  return 'NY';
+}
+
+// Consultar aprendizado IA para o padrão atual
+async function consultarAprendizadoIA(
+  supabase: any,
+  userId: string | null,
+  sweepType: string,
+  structureType: string,
+  fvgType: string,
+  zoneType: string
+): Promise<IALearningData | null> {
+  if (!userId) return null;
+  
+  try {
+    const sessionType = getTradingSession();
+    const padraoId = `${sweepType || 'none'}_${structureType || 'none'}_${fvgType || 'none'}_${zoneType || 'none'}_${sessionType}`;
+    
+    const { data: pattern } = await supabase
+      .from('ia_learning_patterns')
+      .select('taxa_acerto, vezes_testado, recompensa_acumulada')
+      .eq('user_id', userId)
+      .eq('padrao_id', padraoId)
+      .single();
+    
+    if (!pattern) {
+      return {
+        padraoId,
+        taxaAcerto: 50,
+        vezesTestado: 0,
+        confianca: "NEUTRO",
+        ajusteAplicado: "Padrão novo - sem histórico",
+      };
+    }
+    
+    // Determinar nível de confiança
+    let confianca: "ALTA" | "MEDIA" | "BAIXA" | "NEUTRO";
+    let ajuste: string;
+    
+    if (pattern.vezes_testado < 5) {
+      confianca = "NEUTRO";
+      ajuste = "Dados insuficientes (<5 trades)";
+    } else if (pattern.taxa_acerto >= 60) {
+      confianca = "ALTA";
+      ajuste = "Padrão lucrativo - entrada priorizada";
+    } else if (pattern.taxa_acerto >= 45) {
+      confianca = "MEDIA";
+      ajuste = "Padrão neutro - filtros padrão";
+    } else if (pattern.taxa_acerto >= 35) {
+      confianca = "BAIXA";
+      ajuste = "⚠️ Taxa baixa - aumentar rigor de volume +20%";
+    } else {
+      confianca = "BAIXA";
+      ajuste = "🚫 Padrão arriscado (<35%) - considerar evitar";
+    }
+    
+    console.log(`[IA-LEARNING] 🧠 Padrão: ${padraoId} | Taxa: ${pattern.taxa_acerto.toFixed(1)}% | Conf: ${confianca}`);
+    
+    return {
+      padraoId,
+      taxaAcerto: pattern.taxa_acerto,
+      vezesTestado: pattern.vezes_testado,
+      confianca,
+      ajusteAplicado: ajuste,
+    };
+  } catch (error) {
+    console.error('[IA-LEARNING] Erro ao consultar:', error);
+    return null;
+  }
+}
 
 // ==================== INTERFACES TRADE RAIZ EVOLUÍDO ====================
 
@@ -1110,13 +1200,20 @@ serve(async (req) => {
   }
 
   try {
-    const { symbol, timeframes, currentTimeframe } = await req.json();
+    const { symbol, timeframes, currentTimeframe, userId } = await req.json();
 
     if (!symbol || !currentTimeframe) {
       throw new Error("Symbol and currentTimeframe are required");
     }
 
     console.log(`🤖 TRADE RAIZ EVOLUÍDO - ${symbol} | TF: ${currentTimeframe}`);
+    
+    // Inicializar Supabase para consulta de IA
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabase = supabaseUrl && supabaseServiceKey 
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : null;
 
     // PASSO 1: Analisar timeframes superiores
     const higherTimeframes = ["1d", "4h", "1h"];
@@ -1223,6 +1320,20 @@ serve(async (req) => {
     console.log(`   5. R:R: ${checklist.riskRewardValid ? `✓` : '✗'} 1:${checklist.riskRewardValue.toFixed(1)} (min 3:1)`);
     console.log(`   📊 CONCLUSÃO: ${checklist.conclusion} (${checklist.criteriaCount}/5)`);
 
+    // ==================== IA EVOLUTIVA: CONSULTAR APRENDIZADO ====================
+    let iaLearning: IALearningData | null = null;
+    
+    if (supabase && userId) {
+      iaLearning = await consultarAprendizadoIA(
+        supabase,
+        userId,
+        sweep.type || 'none',
+        checklist.structureType || 'none',
+        checklist.fvgType || 'none',
+        premiumDiscount.status
+      );
+    }
+
     const result = {
       symbol,
       timestamp: new Date().toISOString(),
@@ -1243,14 +1354,20 @@ serve(async (req) => {
         orderBlocks,
         manipulationZones,
         pois,
-        sweep, // NOVO!
+        sweep,
       },
       
       checklist,
       allTimeframes: allTimeframesAnalysis,
+      
+      // NOVO: Dados de aprendizado da IA
+      iaLearning,
     };
 
     console.log("✅ Análise concluída");
+    if (iaLearning) {
+      console.log(`🧠 IA: ${iaLearning.confianca} (${iaLearning.taxaAcerto.toFixed(1)}%)`);
+    }
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

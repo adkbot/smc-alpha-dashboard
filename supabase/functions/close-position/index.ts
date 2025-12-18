@@ -93,6 +93,125 @@ async function createBinanceSignature(queryString: string, apiSecret: string): P
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Determinar sessão de trading atual
+function getTradingSession(): string {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  
+  if (utcHour >= 21 || utcHour < 6) return 'OCEANIA';
+  if (utcHour >= 6 && utcHour < 8) return 'ASIA';
+  if (utcHour >= 8 && utcHour < 13) return 'LONDON';
+  return 'NY';
+}
+
+// ==================== SISTEMA IA EVOLUTIVA ====================
+
+interface TradeContext {
+  sweepType: string;
+  structureType: string;
+  fvgType: string;
+  zoneType: string;
+  sessionType: string;
+  obStrength: number;
+  rrRatio: number;
+}
+
+// Aplicar recompensa ao sistema de aprendizado
+async function aplicarRecompensa(
+  supabase: any,
+  userId: string,
+  resultado: 'WIN' | 'LOSS',
+  contexto: TradeContext,
+  operationData: {
+    entryPrice: number;
+    exitPrice: number;
+    pnl: number;
+  }
+): Promise<void> {
+  try {
+    // Construir padrao_id combinado
+    const padraoId = `${contexto.sweepType || 'none'}_${contexto.structureType || 'none'}_${contexto.fvgType || 'none'}_${contexto.zoneType || 'none'}_${contexto.sessionType}`;
+    const recompensa = resultado === 'WIN' ? 1.0 : -1.0;
+    
+    console.log(`[IA-LEARNING] 🧠 Aplicando recompensa: ${recompensa > 0 ? '+1 (WIN)' : '-1 (LOSS)'} | Padrão: ${padraoId}`);
+    
+    // 1. Verificar se padrão já existe
+    const { data: existingPattern } = await supabase
+      .from('ia_learning_patterns')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('padrao_id', padraoId)
+      .single();
+    
+    if (existingPattern) {
+      // Atualizar padrão existente
+      const newWins = resultado === 'WIN' ? existingPattern.wins + 1 : existingPattern.wins;
+      const newLosses = resultado === 'LOSS' ? existingPattern.losses + 1 : existingPattern.losses;
+      const newVezes = existingPattern.vezes_testado + 1;
+      const newRecompensa = existingPattern.recompensa_acumulada + recompensa;
+      const newTaxaAcerto = newVezes > 0 ? (newWins / newVezes) * 100 : 50;
+      
+      await supabase
+        .from('ia_learning_patterns')
+        .update({
+          recompensa_acumulada: newRecompensa,
+          vezes_testado: newVezes,
+          wins: newWins,
+          losses: newLosses,
+          taxa_acerto: newTaxaAcerto,
+          ultimo_uso: new Date().toISOString(),
+        })
+        .eq('id', existingPattern.id);
+      
+      console.log(`[IA-LEARNING] ✅ Padrão atualizado: taxa_acerto=${newTaxaAcerto.toFixed(1)}% (${newWins}W/${newLosses}L)`);
+    } else {
+      // Criar novo padrão
+      const newWins = resultado === 'WIN' ? 1 : 0;
+      const newLosses = resultado === 'LOSS' ? 1 : 0;
+      const newTaxaAcerto = resultado === 'WIN' ? 100 : 0;
+      
+      await supabase
+        .from('ia_learning_patterns')
+        .insert({
+          user_id: userId,
+          padrao_id: padraoId,
+          recompensa_acumulada: recompensa,
+          vezes_testado: 1,
+          wins: newWins,
+          losses: newLosses,
+          taxa_acerto: newTaxaAcerto,
+        });
+      
+      console.log(`[IA-LEARNING] ✅ Novo padrão criado: ${padraoId}`);
+    }
+    
+    // 2. Salvar contexto detalhado do trade
+    await supabase
+      .from('ia_trade_context')
+      .insert({
+        user_id: userId,
+        padrao_combinado: padraoId,
+        sweep_type: contexto.sweepType,
+        structure_type: contexto.structureType,
+        fvg_type: contexto.fvgType,
+        zone_type: contexto.zoneType,
+        session_type: contexto.sessionType,
+        ob_strength: contexto.obStrength,
+        rr_ratio: contexto.rrRatio,
+        entry_price: operationData.entryPrice,
+        exit_price: operationData.exitPrice,
+        pnl: operationData.pnl,
+        resultado: resultado,
+      });
+    
+    console.log(`[IA-LEARNING] ✅ Contexto do trade salvo para treinamento`);
+    
+  } catch (error) {
+    console.error(`[IA-LEARNING] ❌ Erro ao aplicar recompensa:`, error);
+    // Não bloquear fechamento se IA falhar
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -103,7 +222,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { positionId, exitPrice, result } = await req.json();
+    const { positionId, exitPrice, result, tradeContext } = await req.json();
 
     console.log(`[CLOSE-POSITION] Fechando posição ${positionId} | Resultado: ${result}`);
 
@@ -130,7 +249,7 @@ serve(async (req) => {
     
     let finalPnL = 0;
 
-    if (position.direction === 'LONG') {
+    if (position.direction === 'LONG' || position.direction === 'BUY') {
       finalPnL = (exitPrice - position.entry_price) * validatedQuantity;
     } else {
       finalPnL = (position.entry_price - exitPrice) * validatedQuantity;
@@ -143,7 +262,7 @@ serve(async (req) => {
     // 4. Buscar configurações do usuário
     const { data: settings } = await supabase
       .from('user_settings')
-      .select('paper_mode, balance')
+      .select('paper_mode, balance, ia_learning_enabled')
       .eq('user_id', position.user_id)
       .single();
 
@@ -197,7 +316,7 @@ serve(async (req) => {
 
         // Preparar parâmetros para ordem FUTURES
         const timestamp = Date.now();
-        const side = position.direction === 'LONG' ? 'SELL' : 'BUY';
+        const side = (position.direction === 'LONG' || position.direction === 'BUY') ? 'SELL' : 'BUY';
         const quantityFormatted = validatedQuantity.toFixed(exchangeInfo.quantityPrecision);
         
         const params = new URLSearchParams({
@@ -279,6 +398,31 @@ serve(async (req) => {
       console.log(`[CLOSE-POSITION] Balance atualizado: $${settings.balance.toFixed(2)} → $${newBalance.toFixed(2)}`);
     }
 
+    // ==================== IA EVOLUTIVA: APLICAR RECOMPENSA ====================
+    if (settings?.ia_learning_enabled !== false) {
+      const context: TradeContext = tradeContext || {
+        sweepType: position.agents?.sweep_type || 'none',
+        structureType: position.agents?.structure_type || 'none',
+        fvgType: position.agents?.fvg_type || 'none',
+        zoneType: position.agents?.zone_type || 'none',
+        sessionType: position.session || getTradingSession(),
+        obStrength: position.agents?.ob_strength || 0,
+        rrRatio: position.risk_reward || 0,
+      };
+      
+      await aplicarRecompensa(
+        supabase,
+        position.user_id,
+        result as 'WIN' | 'LOSS',
+        context,
+        {
+          entryPrice: position.entry_price,
+          exitPrice: exitPrice,
+          pnl: finalPnL,
+        }
+      );
+    }
+
     // 9. Log
     await supabase.from('agent_logs').insert({
       user_id: position.user_id,
@@ -293,6 +437,7 @@ serve(async (req) => {
         binanceOrderId,
         paperMode: settings?.paper_mode || true,
         quantityValidated: validatedQuantity,
+        iaLearningApplied: settings?.ia_learning_enabled !== false,
         exchangeInfo: {
           stepSize: exchangeInfo.stepSize,
           quantityPrecision: exchangeInfo.quantityPrecision,
@@ -310,6 +455,7 @@ serve(async (req) => {
         pnl: finalPnL,
         result,
         binanceOrderId,
+        iaLearningApplied: settings?.ia_learning_enabled !== false,
         message: `Posição fechada com ${result}`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -8,6 +8,7 @@ import { ActivePositionsPanel } from "@/components/trading/ActivePositionsPanel"
 import { TradingLogsPanel } from "@/components/trading/TradingLogsPanel";
 import { PerformancePanel } from "@/components/trading/PerformancePanel";
 import { OperationsHistoryPanel } from "@/components/trading/OperationsHistoryPanel";
+import { IALearningPanel } from "@/components/trading/IALearningPanel";
 import { useMultiTimeframeAnalysis } from "@/hooks/useMultiTimeframeAnalysis";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -92,6 +93,7 @@ const Dashboard = () => {
       <BotControlPanel />
       <ActivePositionsPanel />
       <AccountPanel />
+      <IALearningPanel />
       <PerformancePanel />
       <SMCPanel symbol={symbol} interval={interval} mtfData={mtfData} />
       <OperationsHistoryPanel />

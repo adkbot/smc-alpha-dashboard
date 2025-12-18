@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Target, Activity, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { MTFAnalysis, TraderRaizChecklist } from "@/hooks/useMultiTimeframeAnalysis";
+import { MTFAnalysis, TraderRaizChecklist, IALearningData } from "@/hooks/useMultiTimeframeAnalysis";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SMCPanelProps {
@@ -156,6 +156,34 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             <strong className="text-foreground">Recomendação:</strong> Aguardar pullback para zona de desconto antes de entrada.
           </p>
         </Card>
+
+        {/* IA Learning Indicator */}
+        {mtfData?.iaLearning && (
+          <Card className={`p-2 mt-2 border text-xs ${
+            mtfData.iaLearning.confianca === 'ALTA' ? 'bg-success/10 border-success/30' :
+            mtfData.iaLearning.confianca === 'BAIXA' ? 'bg-destructive/10 border-destructive/30' :
+            'bg-muted/30 border-muted'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-semibold">🧠 IA:</span>
+                <Badge variant={
+                  mtfData.iaLearning.confianca === 'ALTA' ? 'default' :
+                  mtfData.iaLearning.confianca === 'BAIXA' ? 'destructive' :
+                  'secondary'
+                } className="text-[9px] px-1 py-0">
+                  {mtfData.iaLearning.taxaAcerto.toFixed(0)}%
+                </Badge>
+              </div>
+              <span className="text-[9px] text-muted-foreground">
+                {mtfData.iaLearning.vezesTestado} trades
+              </span>
+            </div>
+            <p className="text-[9px] text-muted-foreground mt-1 truncate">
+              {mtfData.iaLearning.ajusteAplicado}
+            </p>
+          </Card>
+        )}
       </div>
 
       {/* CONTEXTO SUPERIOR - TOP-DOWN */}
