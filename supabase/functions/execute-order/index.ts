@@ -61,6 +61,29 @@ function generatePatternId(signalData: any, session: string): string {
   return patternId;
 }
 
+// 🧠 PATTERN SCORE PROFISSIONAL (0-100) - NÍVEL TRADER HUMANO
+// Baseado em: WinRate (60%), Sample Size (20%), RR/Reward (20%)
+function calculatePatternScore(
+  taxaAcerto: number, 
+  vezesTestado: number, 
+  recompensaAcumulada: number
+): number {
+  // 1. Win Rate Factor (60% do peso)
+  const winRateFactor = taxaAcerto * 0.6;
+  
+  // 2. Sample Size Factor (20% do peso)
+  // Max 20 pontos se >= 20 trades (estatisticamente significativo)
+  const sampleSizeFactor = Math.min(vezesTestado / 20, 1) * 20;
+  
+  // 3. RR/Reward Factor (20% do peso)
+  // Baseado na recompensa média acumulada
+  const avgReward = vezesTestado > 0 ? recompensaAcumulada / vezesTestado : 0;
+  const rrFactor = Math.min(Math.max(avgReward, 0) / 2, 1) * 20;
+  
+  // SCORE FINAL (máximo 100)
+  return Math.min(winRateFactor + sampleSizeFactor + rrFactor, 100);
+}
+
 // Interface para checklist Trader Raiz
 interface TraderRaizChecklist {
   swingsMapped: boolean;
@@ -347,7 +370,12 @@ serve(async (req) => {
       .select('padrao_id, vezes_testado, wins, losses, taxa_acerto, recompensa_acumulada')
       .eq('user_id', user.id)
       .eq('padrao_id', currentPattern)
-      .single();
+      .maybeSingle();
+
+    // 🆕 PATTERN SCORE SYSTEM - Confiança baseada em dados reais
+    const MIN_PATTERN_SCORE = 80; // Mínimo para executar
+    let patternScore = 50; // Score base para padrões desconhecidos
+    let patternConfidence = 0.5;
 
     if (learnedPattern) {
       const winRate = learnedPattern.taxa_acerto || 
@@ -355,19 +383,50 @@ serve(async (req) => {
           ? (learnedPattern.wins / learnedPattern.vezes_testado) * 100 
           : 50);
       
+      // 🆕 CALCULAR PATTERN SCORE
+      patternScore = calculatePatternScore(
+        winRate,
+        learnedPattern.vezes_testado,
+        learnedPattern.recompensa_acumulada || 0
+      );
+      patternConfidence = patternScore / 100;
+      
       console.log(`[IA-LEARNING] 📊 Padrão encontrado: "${currentPattern}"`);
       console.log(`[IA-LEARNING] Win Rate: ${winRate.toFixed(1)}% (${learnedPattern.wins}W / ${learnedPattern.losses}L em ${learnedPattern.vezes_testado} trades)`);
       console.log(`[IA-LEARNING] Recompensa acumulada: ${learnedPattern.recompensa_acumulada?.toFixed(2) || 0}`);
+      console.log(`[IA-LEARNING] 🎯 PATTERN SCORE: ${patternScore.toFixed(1)}/100 (Confidence: ${patternConfidence.toFixed(2)})`);
       
-      // Calcular confiança baseada no padrão
-      if (winRate > 60 && learnedPattern.vezes_testado >= 5) setupConfidence += 20;
-      else if (winRate > 50 && learnedPattern.vezes_testado >= 3) setupConfidence += 10;
-      
-      // 🚫 BLOQUEAR se win rate < 40% E pelo menos 3 trades históricos
-      if (winRate < 40 && learnedPattern.vezes_testado >= 3) {
-        console.log(`[IA-LEARNING] ❌ BLOQUEADO! Padrão com histórico ruim`);
+      // 🆕 FILTRO HOLD: Se PatternScore < 80, NÃO executa (espera setup melhor)
+      if (learnedPattern.vezes_testado >= 5 && patternScore < MIN_PATTERN_SCORE) {
+        console.log(`[IA-LEARNING] ⏸️ HOLD! PatternScore ${patternScore.toFixed(0)} < ${MIN_PATTERN_SCORE}`);
         
-        // Registrar log de bloqueio
+        await supabase.from('agent_logs').insert({
+          user_id: user.id,
+          agent_name: 'IA_PATTERN_FILTER',
+          status: 'HOLD',
+          asset,
+          data: {
+            pattern: currentPattern,
+            patternScore,
+            minRequired: MIN_PATTERN_SCORE,
+            winRate,
+            trades: learnedPattern.vezes_testado,
+            reason: 'PatternScore below threshold - waiting for better setup',
+          },
+        });
+        
+        throw new Error(`IA: Aguardando setup melhor. PatternScore: ${patternScore.toFixed(0)}/100 (mínimo: ${MIN_PATTERN_SCORE}). WR: ${winRate.toFixed(0)}%`);
+      }
+      
+      // Calcular confiança baseada no PatternScore
+      if (patternScore >= 80) setupConfidence += 25;
+      else if (patternScore >= 60) setupConfidence += 15;
+      else if (patternScore >= 40) setupConfidence += 5;
+      
+      // 🚫 BLOQUEAR se win rate < 35% E pelo menos 5 trades históricos (padrão muito ruim)
+      if (winRate < 35 && learnedPattern.vezes_testado >= 5) {
+        console.log(`[IA-LEARNING] ❌ BLOQUEADO! Padrão com histórico muito ruim`);
+        
         await supabase.from('agent_logs').insert({
           user_id: user.id,
           agent_name: 'IA_LEARNING_FILTER',
@@ -375,26 +434,21 @@ serve(async (req) => {
           asset,
           data: {
             pattern: currentPattern,
+            patternScore,
             winRate,
             wins: learnedPattern.wins,
             losses: learnedPattern.losses,
             totalTrades: learnedPattern.vezes_testado,
-            reason: 'Pattern with poor historical performance',
+            reason: 'Pattern with very poor historical performance',
           },
         });
         
-        throw new Error(`IA Learning: Padrão "${currentPattern}" bloqueado (${winRate.toFixed(0)}% WR em ${learnedPattern.vezes_testado} trades). Histórico ruim - evitar este setup.`);
+        throw new Error(`IA Learning: Padrão "${currentPattern}" bloqueado (${winRate.toFixed(0)}% WR, Score: ${patternScore.toFixed(0)}). Histórico muito ruim.`);
       }
       
-      // ⚠️ ALERTA se win rate entre 40-50%
-      if (winRate >= 40 && winRate < 50) {
-        console.log(`[IA-LEARNING] ⚠️ CUIDADO: Padrão com histórico mediano (${winRate.toFixed(1)}%)`);
-        setupConfidence -= 5;
-      }
-      
-      // ✅ APROVADO se win rate >= 50%
-      if (winRate >= 50) {
-        console.log(`[IA-LEARNING] ✅ APROVADO! Padrão com bom histórico (${winRate.toFixed(1)}%)`);
+      // ✅ APROVADO se PatternScore >= 80
+      if (patternScore >= MIN_PATTERN_SCORE) {
+        console.log(`[IA-LEARNING] ✅ PatternScore ${patternScore.toFixed(0)} >= ${MIN_PATTERN_SCORE} - EXECUTANDO!`);
       }
     } else {
       console.log(`[IA-LEARNING] ℹ️ Padrão "${currentPattern}" não encontrado - buscando padrões similares...`);

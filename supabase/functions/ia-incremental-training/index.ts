@@ -27,7 +27,7 @@ interface PatternWeight {
   losses: number;
 }
 
-// Atualizar Q-value com learning rate baixo
+// Atualizar Q-value com learning rate baixo + MEMORY DECAY
 function updateQValue(
   currentWeight: PatternWeight | undefined,
   action: string,
@@ -50,6 +50,41 @@ function updateQValue(
   else weight.losses++;
   
   return weight;
+}
+
+// 🆕 MEMORY DECAY: newScore = (oldScore * 0.8) + (recentScore * 0.2)
+// Preserva 80% do conhecimento antigo, ajusta 20% com novo
+function applyMemoryDecay(
+  existingWinRate: number,
+  newResult: 'WIN' | 'LOSS'
+): number {
+  const recentWinRate = newResult === 'WIN' ? 100 : 0;
+  return (existingWinRate * 0.8) + (recentWinRate * 0.2);
+}
+
+// 🆕 SHUFFLE ARRAY para amostragem aleatória
+function shuffleArray<T>(arr: T[]): T[] {
+  return arr
+    .map(value => ({ value, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ value }) => value);
+}
+
+// 🆕 SAMPLE BATCH: 40% Elite + 60% Normal
+function sampleBatch(
+  replayBuffer: any[], 
+  eliteBuffer: any[], 
+  batchSize: number = 64
+): any[] {
+  const eliteSize = Math.floor(batchSize * 0.4); // 40% elite
+  const normalSize = batchSize - eliteSize;      // 60% normal
+  
+  const eliteSamples = shuffleArray(eliteBuffer).slice(0, eliteSize);
+  const normalSamples = shuffleArray(replayBuffer).slice(0, normalSize);
+  
+  console.log(`[SAMPLE-BATCH] Amostragem: ${eliteSamples.length} elite + ${normalSamples.length} normal = ${eliteSamples.length + normalSamples.length} total`);
+  
+  return [...eliteSamples, ...normalSamples];
 }
 
 // Calcular confiança do modelo baseado em métricas
@@ -137,56 +172,51 @@ serve(async (req) => {
 
     console.log(`[ia-incremental-training] ${eliteExperiences?.length || 0} experiências elite encontradas`);
 
-    // 4. TREINAR INCREMENTALMENTE
+    // 4. TREINAR INCREMENTALMENTE COM AMOSTRAGEM 40% ELITE + 60% NORMAL
     let updatedCount = 0;
     let skippedFrozen = 0;
 
-    // 4.1 Atualizar com experiências recentes (peso 1x, learning rate 0.1)
-    if (recentExperiences) {
-      for (const exp of recentExperiences) {
-        const patternId = exp.pattern_id || exp.metadata?.pattern_id;
-        
-        if (!patternId) continue;
-        
-        // Só atualiza padrões não congelados
-        if (frozenPatterns.includes(patternId)) {
-          skippedFrozen++;
-          continue;
-        }
-        
-        modelWeights[patternId] = updateQValue(
-          modelWeights[patternId],
-          exp.action,
-          exp.reward,
-          0.1 // Learning rate baixo para não esquecer
-        );
-        updatedCount++;
-      }
-    }
+    // 🆕 USAR SAMPLE BATCH: 40% Elite + 60% Normal
+    const eliteReplays = (eliteExperiences || [])
+      .filter(e => e.replay)
+      .map(e => ({ ...e.replay, isElite: true, eliteId: e.id, timesUsed: e.times_used_in_training }));
+    
+    const normalReplays = (recentExperiences || []).map(e => ({ ...e, isElite: false }));
+    
+    const sampledBatch = sampleBatch(normalReplays, eliteReplays, 100);
+    console.log(`[ia-incremental-training] Batch amostrado: ${sampledBatch.length} experiências (40% elite, 60% normal)`);
 
-    // 4.2 REFORÇAR com experiências elite (peso 2x, learning rate 0.05)
-    if (eliteExperiences) {
-      for (const elite of eliteExperiences) {
-        const replay = elite.replay;
-        if (!replay) continue;
-        
-        const patternId = replay.pattern_id || replay.metadata?.pattern_id;
-        if (!patternId) continue;
-        
-        // Elite tem reward dobrado e learning rate menor (preservar conhecimento)
-        modelWeights[patternId] = updateQValue(
-          modelWeights[patternId],
-          replay.action,
-          replay.reward * 2, // Elite tem 2x peso
-          0.05 // Learning rate ainda menor para elite (preservar)
-        );
-        updatedCount++;
-        
-        // Marcar uso no elite buffer
+    // 4.1 Treinar com batch amostrado
+    for (const exp of sampledBatch) {
+      const patternId = exp.pattern_id || exp.metadata?.pattern_id;
+      
+      if (!patternId) continue;
+      
+      // Só atualiza padrões não congelados
+      if (frozenPatterns.includes(patternId)) {
+        skippedFrozen++;
+        continue;
+      }
+      
+      // 🆕 Elite tem 2x reward e learning rate menor
+      const isElite = exp.isElite === true;
+      const rewardMultiplier = isElite ? 2.0 : 1.0;
+      const learningRate = isElite ? 0.05 : 0.1;
+      
+      modelWeights[patternId] = updateQValue(
+        modelWeights[patternId],
+        exp.action,
+        exp.reward * rewardMultiplier,
+        learningRate
+      );
+      updatedCount++;
+      
+      // Marcar uso no elite buffer se for elite
+      if (isElite && exp.eliteId) {
         await supabase
           .from('ia_elite_buffer')
-          .update({ times_used_in_training: (elite.times_used_in_training || 0) + 1 })
-          .eq('id', elite.id);
+          .update({ times_used_in_training: (exp.timesUsed || 0) + 1 })
+          .eq('id', exp.eliteId);
       }
     }
 

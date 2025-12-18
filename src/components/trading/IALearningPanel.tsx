@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database, Trophy, Sparkles, Activity } from "lucide-react";
+import { Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Zap, RefreshCw, Play, Loader2, Database, Trophy, Sparkles, Activity, Trash2 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +8,19 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+// 🆕 PATTERN SCORE FUNCTION (igual aos edge functions)
+function calculatePatternScore(
+  taxaAcerto: number, 
+  vezesTestado: number, 
+  recompensaAcumulada: number
+): number {
+  const winRateFactor = taxaAcerto * 0.6;
+  const sampleSizeFactor = Math.min(vezesTestado / 20, 1) * 20;
+  const avgReward = vezesTestado > 0 ? recompensaAcumulada / vezesTestado : 0;
+  const rrFactor = Math.min(Math.max(avgReward, 0) / 2, 1) * 20;
+  return Math.min(winRateFactor + sampleSizeFactor + rrFactor, 100);
+}
 
 interface LearningPattern {
   id: string;
@@ -114,15 +127,17 @@ export const IALearningPanel = () => {
     }
   }, []);
 
-  // Fetch model status
+  // Fetch model status - 🆕 CORRIGIDO ERRO 406: usar .limit(1) ao invés de .single()
   const fetchModelStatus = useCallback(async (userId: string) => {
     try {
-      const { data: model } = await supabase
+      const { data: models } = await supabase
         .from('ia_model_weights')
         .select('is_production, confidence_level, train_winrate, validation_winrate')
         .eq('user_id', userId)
         .eq('is_current', true)
-        .single();
+        .limit(1);
+
+      const model = models?.[0] || null;
 
       if (model) {
         setModelStatus({
@@ -132,9 +147,11 @@ export const IALearningPanel = () => {
           validationWinRate: model.validation_winrate || 0,
         });
         setTrainingComplete(true);
+      } else {
+        setModelStatus(null);
       }
     } catch (error) {
-      // Modelo ainda não existe
+      console.error('Erro ao buscar status do modelo:', error);
       setModelStatus(null);
     }
   }, []);
@@ -266,6 +283,47 @@ export const IALearningPanel = () => {
       });
     } finally {
       setIsPreTraining(false);
+    }
+  };
+
+  // 🆕 LIMPAR DADOS E RE-TREINAR (começar do zero)
+  const clearAndRetrain = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    // Confirmação
+    if (!confirm('⚠️ Isto vai APAGAR todos os dados de treinamento da IA. Tem certeza?')) return;
+    
+    toast.info('🗑️ Limpando dados de treinamento...');
+    
+    try {
+      // 1. Limpar padrões aprendidos
+      await supabase.from('ia_learning_patterns').delete().eq('user_id', user.id);
+      
+      // 2. Limpar modelos
+      await supabase.from('ia_model_weights').delete().eq('user_id', user.id);
+      
+      // 3. Limpar replay buffer
+      await supabase.from('ia_replay_buffer').delete().eq('user_id', user.id);
+      
+      // 4. Limpar elite buffer
+      await supabase.from('ia_elite_buffer').delete().eq('user_id', user.id);
+      
+      // 5. Resetar state local
+      setPatterns([]);
+      setPreTrainingReport(null);
+      setModelStatus(null);
+      setTrainingComplete(false);
+      setNivelConfianca(50);
+      
+      toast.success('✅ Dados limpos! Iniciando novo treinamento...');
+      
+      // 6. Iniciar novo treinamento automaticamente
+      await startPreTraining();
+      
+    } catch (error: any) {
+      console.error('Erro ao limpar dados:', error);
+      toast.error(`❌ Erro ao limpar: ${error.message}`);
     }
   };
 
@@ -425,15 +483,27 @@ export const IALearningPanel = () => {
                 <p className="text-xs text-muted-foreground">Padrões</p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startPreTraining}
-              className="w-full h-7 text-xs"
-            >
-              <RefreshCw className="w-3 h-3 mr-1" />
-              Re-treinar
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={startPreTraining}
+                className="flex-1 h-7 text-xs"
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Re-treinar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={clearAndRetrain}
+                disabled={isPreTraining}
+                className="h-7 text-xs"
+                title="Apagar todos os dados e começar do zero"
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="text-center">
@@ -548,24 +618,36 @@ export const IALearningPanel = () => {
             <span className="text-xs font-semibold text-success">Top Padrões</span>
           </div>
           <div className="space-y-2">
-            {topPatterns.map((pattern) => (
-              <div 
-                key={pattern.id}
-                className="flex items-center justify-between p-2 bg-success/10 rounded border border-success/20"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">
-                    {formatPatternName(pattern.padrao_id)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {pattern.wins}W / {pattern.losses}L ({pattern.vezes_testado} trades)
-                  </p>
+            {topPatterns.map((pattern) => {
+              const patternScore = calculatePatternScore(
+                pattern.taxa_acerto,
+                pattern.vezes_testado,
+                pattern.recompensa_acumulada || 0
+              );
+              return (
+                <div 
+                  key={pattern.id}
+                  className="flex items-center justify-between p-2 bg-success/10 rounded border border-success/20"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">
+                      {formatPatternName(pattern.padrao_id)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {pattern.wins}W / {pattern.losses}L ({pattern.vezes_testado} trades)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <Badge variant={patternScore >= 80 ? "default" : "secondary"} className="text-xs">
+                      {patternScore.toFixed(0)}
+                    </Badge>
+                    <Badge variant="outline" className="text-success border-success">
+                      {pattern.taxa_acerto.toFixed(0)}%
+                    </Badge>
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-success border-success ml-2">
-                  {pattern.taxa_acerto.toFixed(0)}%
-                </Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -578,24 +660,36 @@ export const IALearningPanel = () => {
             <span className="text-xs font-semibold text-destructive">Padrões a Evitar</span>
           </div>
           <div className="space-y-2">
-            {worstPatterns.map((pattern) => (
-              <div 
-                key={pattern.id}
-                className="flex items-center justify-between p-2 bg-destructive/10 rounded border border-destructive/20"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">
-                    {formatPatternName(pattern.padrao_id)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {pattern.wins}W / {pattern.losses}L ({pattern.vezes_testado} trades)
-                  </p>
+            {worstPatterns.map((pattern) => {
+              const patternScore = calculatePatternScore(
+                pattern.taxa_acerto,
+                pattern.vezes_testado,
+                pattern.recompensa_acumulada || 0
+              );
+              return (
+                <div 
+                  key={pattern.id}
+                  className="flex items-center justify-between p-2 bg-destructive/10 rounded border border-destructive/20"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">
+                      {formatPatternName(pattern.padrao_id)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {pattern.wins}W / {pattern.losses}L ({pattern.vezes_testado} trades)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {patternScore.toFixed(0)}
+                    </Badge>
+                    <Badge variant="outline" className="text-destructive border-destructive">
+                      {pattern.taxa_acerto.toFixed(0)}%
+                    </Badge>
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-destructive border-destructive ml-2">
-                  {pattern.taxa_acerto.toFixed(0)}%
-                </Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -604,7 +698,7 @@ export const IALearningPanel = () => {
       <div className="pt-2 border-t border-border">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Zap className="w-3 h-3" />
-          <span className="text-xs">IA monitorando {patterns.length} padrões</span>
+          <span className="text-xs">IA monitorando {patterns.length} padrões | Score ≥80 = executa</span>
         </div>
       </div>
     </Card>
