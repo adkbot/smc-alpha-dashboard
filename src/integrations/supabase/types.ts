@@ -1594,6 +1594,48 @@ export type Database = {
           },
         ]
       }
+      smc_api_credentials: {
+        Row: {
+          api_key_encrypted: string
+          api_secret_encrypted: string
+          created_at: string
+          exchange: string
+          id: string
+          is_active: boolean
+          is_testnet: boolean
+          last_validated_at: string | null
+          updated_at: string
+          user_id: string
+          validation_status: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          api_secret_encrypted: string
+          created_at?: string
+          exchange?: string
+          id?: string
+          is_active?: boolean
+          is_testnet?: boolean
+          last_validated_at?: string | null
+          updated_at?: string
+          user_id: string
+          validation_status?: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          api_secret_encrypted?: string
+          created_at?: string
+          exchange?: string
+          id?: string
+          is_active?: boolean
+          is_testnet?: boolean
+          last_validated_at?: string | null
+          updated_at?: string
+          user_id?: string
+          validation_status?: string
+        }
+        Relationships: []
+      }
       smc_configs_2025_11_29_15_37: {
         Row: {
           auto_trading_enabled: boolean | null
@@ -1638,6 +1680,191 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "user_trading_summary"
             referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      smc_confirmed_signals: {
+        Row: {
+          created_at: string
+          direction: string
+          entry_price: number
+          executed_at: string | null
+          expires_at: string | null
+          fib_618_price: number | null
+          fib_786_price: number | null
+          htf_bias: string | null
+          id: string
+          ltf_choch_price: number | null
+          order_block_high: number | null
+          order_block_low: number | null
+          risk_reward: number
+          setup_type: string
+          status: string
+          stop_loss: number
+          symbol: string
+          take_profit_1: number
+          take_profit_2: number | null
+          take_profit_3: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          direction: string
+          entry_price: number
+          executed_at?: string | null
+          expires_at?: string | null
+          fib_618_price?: number | null
+          fib_786_price?: number | null
+          htf_bias?: string | null
+          id?: string
+          ltf_choch_price?: number | null
+          order_block_high?: number | null
+          order_block_low?: number | null
+          risk_reward: number
+          setup_type: string
+          status?: string
+          stop_loss: number
+          symbol: string
+          take_profit_1: number
+          take_profit_2?: number | null
+          take_profit_3?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          direction?: string
+          entry_price?: number
+          executed_at?: string | null
+          expires_at?: string | null
+          fib_618_price?: number | null
+          fib_786_price?: number | null
+          htf_bias?: string | null
+          id?: string
+          ltf_choch_price?: number | null
+          order_block_high?: number | null
+          order_block_low?: number | null
+          risk_reward?: number
+          setup_type?: string
+          status?: string
+          stop_loss?: number
+          symbol?: string
+          take_profit_1?: number
+          take_profit_2?: number | null
+          take_profit_3?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      smc_daily_stats: {
+        Row: {
+          avg_risk_reward: number
+          created_at: string
+          date: string
+          id: string
+          losing_trades: number
+          max_drawdown: number
+          setup_1_count: number
+          setup_2_count: number
+          total_pnl: number
+          total_trades: number
+          updated_at: string
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Insert: {
+          avg_risk_reward?: number
+          created_at?: string
+          date: string
+          id?: string
+          losing_trades?: number
+          max_drawdown?: number
+          setup_1_count?: number
+          setup_2_count?: number
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Update: {
+          avg_risk_reward?: number
+          created_at?: string
+          date?: string
+          id?: string
+          losing_trades?: number
+          max_drawdown?: number
+          setup_1_count?: number
+          setup_2_count?: number
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id?: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Relationships: []
+      }
+      smc_executed_trades: {
+        Row: {
+          close_reason: string | null
+          direction: string
+          entry_price: number
+          entry_time: string
+          exit_price: number | null
+          exit_time: string | null
+          id: string
+          leverage: number
+          pnl: number | null
+          pnl_percent: number | null
+          quantity: number
+          signal_id: string | null
+          status: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          close_reason?: string | null
+          direction: string
+          entry_price: number
+          entry_time?: string
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          leverage?: number
+          pnl?: number | null
+          pnl_percent?: number | null
+          quantity: number
+          signal_id?: string | null
+          status?: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          close_reason?: string | null
+          direction?: string
+          entry_price?: number
+          entry_time?: string
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          leverage?: number
+          pnl?: number | null
+          pnl_percent?: number | null
+          quantity?: number
+          signal_id?: string | null
+          status?: string
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "smc_executed_trades_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "smc_confirmed_signals"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1767,6 +1994,69 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      smc_user_configs: {
+        Row: {
+          auto_trading_enabled: boolean
+          created_at: string
+          default_symbol: string
+          htf_timeframe: string
+          id: string
+          leverage: number
+          ltf_timeframe: string
+          show_bos: boolean
+          show_choch: boolean
+          show_fibonacci: boolean
+          show_fvg: boolean
+          show_liquidity: boolean
+          show_order_blocks: boolean
+          show_swings: boolean
+          test_mode: boolean
+          trade_amount: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_trading_enabled?: boolean
+          created_at?: string
+          default_symbol?: string
+          htf_timeframe?: string
+          id?: string
+          leverage?: number
+          ltf_timeframe?: string
+          show_bos?: boolean
+          show_choch?: boolean
+          show_fibonacci?: boolean
+          show_fvg?: boolean
+          show_liquidity?: boolean
+          show_order_blocks?: boolean
+          show_swings?: boolean
+          test_mode?: boolean
+          trade_amount?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_trading_enabled?: boolean
+          created_at?: string
+          default_symbol?: string
+          htf_timeframe?: string
+          id?: string
+          leverage?: number
+          ltf_timeframe?: string
+          show_bos?: boolean
+          show_choch?: boolean
+          show_fibonacci?: boolean
+          show_fvg?: boolean
+          show_liquidity?: boolean
+          show_order_blocks?: boolean
+          show_swings?: boolean
+          test_mode?: boolean
+          trade_amount?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       strategy_config: {
         Row: {
