@@ -91,6 +91,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
     const parent = containerRef.current;
     if (parent) {
       // Limpar todo o conteúdo de uma vez (mais seguro que removeChild)
+      // Última atualização: 2026-01-18 16:06 -FORCE REBUILD
       parent.innerHTML = '';
 
       // Criar div para o widget
