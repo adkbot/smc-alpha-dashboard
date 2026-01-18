@@ -1,0 +1,31 @@
+{
+    "name": "Trade Raiz - Plataforma de Trading SMC",
+    "short_name": "Trade Raiz",
+    "description": "Plataforma profissional de análise SMC com AI para trading de Cripto e Forex",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0a0a0a",
+    "theme_color": "#10b981",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "/logo-trade-raiz.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/logo-trade-raiz.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "finance",
+        "productivity",
+        "business"
+    ],
+    "screenshots": [],
+    "prefer_related_applications": false
+}
