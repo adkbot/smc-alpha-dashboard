@@ -1,0 +1,96 @@
+====================================================================
+HOW TO APPLY DATABASE MIGRATIONS - Vision Agent Tables
+====================================================================
+
+Since Supabase CLI requires authentication, you'll need to apply the
+migrations manually through the Supabase Dashboard.
+
+FOLLOW THESE STEPS:
+
+1. Open your Supabase project dashboard:
+   https://app.supabase.com/project/zfefnlibzgkfbgdtagho
+
+2. Navigate to:
+   SQL Editor (left sidebar) → New Query
+
+3. Open the migration file on your local system:
+   /home/ubuntu/smc-alpha-dashboard-main/supabase/migrations/20251125120000_create_vision_agent_tables.sql
+
+4. Copy the ENTIRE content of the SQL file
+
+5. Paste it into the SQL Editor in Supabase Dashboard
+
+6. Click "Run" button or press Ctrl+Enter
+
+7. You should see:
+   "Success. No rows returned"
+
+VERIFICATION:
+
+8. Go to "Table Editor" in Supabase Dashboard
+
+9. You should now see 3 new tables:
+   - vision_agent_videos
+   - vision_agent_settings
+   - vision_agent_signals
+
+10. Click on each table to verify columns and indexes were created
+
+====================================================================
+EDGE FUNCTION DEPLOYMENT
+====================================================================
+
+1. In Supabase Dashboard, go to:
+   Edge Functions (left sidebar)
+
+2. Click "New Edge Function"
+
+3. Function Name: vision-agent-signal
+
+4. Copy code from:
+   /home/ubuntu/smc-alpha-dashboard-main/supabase/functions/vision-agent-signal/index.ts
+
+5. Paste into the editor
+
+6. Click "Deploy"
+
+7. After deployment, go to function Settings:
+   - Set "Verify JWT" to OFF (disabled)
+
+8. Test the function with this payload:
+   {
+     "user_id": "test",
+     "action": "IGNORE",
+     "confidence": 0.5,
+     "asset": "BTCUSDT",
+     "video_id": "test123"
+   }
+
+9. Expected response:
+   {"status": "ignored", "message": "Signal action is IGNORE"}
+
+====================================================================
+ALTERNATIVE: Using Supabase CLI (Requires Login)
+====================================================================
+
+If you prefer using CLI:
+
+1. Login to Supabase:
+   $ supabase login
+
+2. Link your project:
+   $ cd /home/ubuntu/smc-alpha-dashboard-main
+   $ supabase link --project-ref zfefnlibzgkfbgdtagho
+
+3. Push migrations:
+   $ supabase db push
+
+4. Deploy Edge Function:
+   $ supabase functions deploy vision-agent-signal
+
+====================================================================
+
+Once completed, refresh the browser at http://localhost:8080
+and login to see the Vision Agent Panel in the Dashboard!
+
+====================================================================
