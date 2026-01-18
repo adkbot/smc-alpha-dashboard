@@ -8,11 +8,8 @@ const Index = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
 
-  useEffect(() => {
-    if (!loading && user) {
-      navigate("/dashboard");
-    }
-  }, [user, loading, navigate]);
+  // Não redirecionar automaticamente - deixar usuário escolher
+  // Isso evita que a sessão seja compartilhada entre usuários
 
   if (loading) {
     return (
@@ -39,7 +36,7 @@ const Index = () => {
               <span className="text-xs text-muted-foreground">by Gemini</span>
             </div>
           </div>
-          
+
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Plataforma profissional de análise SMC com inteligência artificial
             para trading de Cripto e Forex
@@ -54,7 +51,7 @@ const Index = () => {
               Estrutura de mercado, BOS, CHOCH e zonas de liquidez em tempo real
             </p>
           </div>
-          
+
           <div className="p-6 rounded-lg bg-card border border-border hover:border-success transition-colors">
             <TrendingUp className="w-12 h-12 text-success mb-4 mx-auto" />
             <h3 className="text-lg font-bold mb-2">Gerenciamento de Risco</h3>
@@ -62,7 +59,7 @@ const Index = () => {
               Calculadora R:R, relatórios de Win/Loss e sincronização de contas
             </p>
           </div>
-          
+
           <div className="p-6 rounded-lg bg-card border border-border hover:border-accent transition-colors">
             <Shield className="w-12 h-12 text-accent mb-4 mx-auto" />
             <h3 className="text-lg font-bold mb-2">AI Copilot</h3>
