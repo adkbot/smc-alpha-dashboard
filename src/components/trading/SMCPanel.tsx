@@ -112,8 +112,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
     // Initial fetch
     fetchRealtimePrice();
 
-    // Update every 3 seconds
-    const interval = setInterval(fetchRealtimePrice, 3000);
+    // Update every 10 seconds (reduz flickering)
+    const interval = setInterval(fetchRealtimePrice, 10000);
 
     return () => clearInterval(interval);
   }, [symbol, mtfData?.currentTimeframe?.premiumDiscount]);
@@ -160,8 +160,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         {/* IA Learning Indicator */}
         {mtfData?.iaLearning && (
           <Card className={`p-2 mt-2 border text-xs ${mtfData.iaLearning.confianca === 'ALTA' ? 'bg-success/10 border-success/30' :
-              mtfData.iaLearning.confianca === 'BAIXA' ? 'bg-destructive/10 border-destructive/30' :
-                'bg-muted/30 border-muted'
+            mtfData.iaLearning.confianca === 'BAIXA' ? 'bg-destructive/10 border-destructive/30' :
+              'bg-muted/30 border-muted'
             }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
@@ -244,10 +244,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
 
             {/* VIÉS DOMINANTE */}
             <Card className={`p-2 border-2 ${mtfData?.dominantBias?.bias === "ALTA"
-                ? "bg-success/10 border-success"
-                : mtfData?.dominantBias?.bias === "BAIXA"
-                  ? "bg-destructive/10 border-destructive"
-                  : "bg-secondary border-border"
+              ? "bg-success/10 border-success"
+              : mtfData?.dominantBias?.bias === "BAIXA"
+                ? "bg-destructive/10 border-destructive"
+                : "bg-secondary border-border"
               }`}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold">VIÉS DOMINANTE:</span>
@@ -328,8 +328,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 <div
                   key={tf.timeframe}
                   className={`p-1.5 rounded border text-center ${tf.timeframe.toLowerCase() === interval.toLowerCase()
-                      ? 'border-primary bg-primary/20'
-                      : 'border-border bg-secondary/50'
+                    ? 'border-primary bg-primary/20'
+                    : 'border-border bg-secondary/50'
                     }`}
                 >
                   <div className="text-[9px] text-muted-foreground font-medium mb-0.5">
@@ -361,10 +361,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             Estrutura de Mercado
           </h3>
           <Badge variant="outline" className={`${mtfData?.currentTimeframe?.trend === "ALTA"
-              ? "text-success border-success"
-              : mtfData?.currentTimeframe?.trend === "BAIXA"
-                ? "text-destructive border-destructive"
-                : "text-muted-foreground border-muted"
+            ? "text-success border-success"
+            : mtfData?.currentTimeframe?.trend === "BAIXA"
+              ? "text-destructive border-destructive"
+              : "text-muted-foreground border-muted"
             }`}>
             {mtfData?.currentTimeframe?.trend || "NEUTRO"}
           </Badge>
@@ -372,8 +372,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
 
         <div className="grid grid-cols-2 gap-2">
           <Card className={`p-3 border-2 ${mtfData?.currentTimeframe?.lastBOS
-              ? "bg-success/10 border-success"
-              : "bg-secondary border-border"
+            ? "bg-success/10 border-success"
+            : "bg-secondary border-border"
             }`}>
             <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
               {mtfData?.currentTimeframe?.lastBOS && <span className="text-success">✓</span>}
@@ -392,8 +392,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           </Card>
 
           <Card className={`p-3 border-2 ${mtfData?.currentTimeframe?.lastCHOCH
-              ? "bg-warning/10 border-warning"
-              : "bg-secondary border-border"
+            ? "bg-warning/10 border-warning"
+            : "bg-secondary border-border"
             }`}>
             <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
               {mtfData?.currentTimeframe?.lastCHOCH && <span className="text-warning">⚡</span>}
@@ -415,8 +415,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         {/* Indicador de estrutura do checklist */}
         {mtfData?.checklist && (
           <div className={`mt-2 p-2 rounded text-[10px] ${mtfData.checklist.structureBroken
-              ? "bg-success/20 text-success"
-              : "bg-muted text-muted-foreground"
+            ? "bg-success/20 text-success"
+            : "bg-muted text-muted-foreground"
             }`}>
             {mtfData.checklist.structureBroken
               ? `✓ ${mtfData.checklist.structureType} confirmado em $${mtfData.checklist.structurePrice?.toFixed(2) || '—'}`
@@ -450,8 +450,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             <div className="space-y-2">
               {displayPOIs.map((poi) => (
                 <Card key={poi.id} className={`p-3 ${poi.type === "bullish"
-                    ? "border-success bg-success/10"
-                    : "border-destructive bg-destructive/10"
+                  ? "border-success bg-success/10"
+                  : "border-destructive bg-destructive/10"
                   }`}>
                   <div className="flex justify-between items-center mb-2">
                     <Badge variant={poi.type === "bullish" ? "default" : "destructive"}>
@@ -503,8 +503,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           <div className="space-y-2">
             {mtfData.currentTimeframe.fvgs.slice(0, 3).map((fvg, i) => (
               <Card key={i} className={`p-2 ${fvg.type === "bullish"
-                  ? "bg-success/5 border-success/20"
-                  : "bg-destructive/5 border-destructive/20"
+                ? "bg-success/5 border-success/20"
+                : "bg-destructive/5 border-destructive/20"
                 }`}>
                 <div className="flex justify-between items-center">
                   <Badge variant={fvg.type === "bullish" ? "default" : "destructive"}>
@@ -537,8 +537,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           <div className="space-y-2">
             {mtfData.currentTimeframe.orderBlocks.map((ob, i) => (
               <Card key={i} className={`p-2 ${ob.type === "bullish"
-                  ? "bg-success/5 border-success/20"
-                  : "bg-destructive/5 border-destructive/20"
+                ? "bg-success/5 border-success/20"
+                : "bg-destructive/5 border-destructive/20"
                 }`}>
                 <div className="flex justify-between items-center mb-1">
                   <Badge variant={ob.type === "bullish" ? "default" : "destructive"}>
@@ -612,10 +612,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           </h3>
 
           <Card className={`p-3 border-2 ${(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM"
-              ? "bg-destructive/10 border-destructive"
-              : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
-                ? "bg-success/10 border-success"
-                : "bg-secondary border-border"
+            ? "bg-destructive/10 border-destructive"
+            : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
+              ? "bg-success/10 border-success"
+              : "bg-secondary border-border"
             }`}>
             <div className="flex justify-between items-center mb-3">
               <span className="text-xs text-muted-foreground">Posição no Range</span>
@@ -680,9 +680,9 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           </Card>
 
           <Card className={`p-2 mt-2 ${((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && mtfData.dominantBias.bias === "ALTA") ||
-              ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && mtfData.dominantBias.bias === "BAIXA")
-              ? "bg-warning/20 border-warning"
-              : "bg-muted/50"
+            ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && mtfData.dominantBias.bias === "BAIXA")
+            ? "bg-warning/20 border-warning"
+            : "bg-muted/50"
             }`}>
             <p className="text-[10px] text-muted-foreground">
               {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" &&
@@ -734,8 +734,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         <div className="border-b-2 border-primary">
           {/* 🔷 CAMADA 1: CONTEXTO */}
           <div className={`p-3 border-b ${mtfData.checklist.context?.ready
-              ? "bg-primary/10"
-              : "bg-muted/50"
+            ? "bg-primary/10"
+            : "bg-muted/50"
             }`}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
@@ -750,8 +750,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               <Card className="p-2 bg-card/50">
                 <div className="text-[9px] text-muted-foreground">BIAS</div>
                 <div className={`text-sm font-bold ${mtfData.checklist.context?.bias === "BULL" ? "text-success" :
-                    mtfData.checklist.context?.bias === "BEAR" ? "text-destructive" :
-                      "text-muted-foreground"
+                  mtfData.checklist.context?.bias === "BEAR" ? "text-destructive" :
+                    "text-muted-foreground"
                   }`}>
                   {mtfData.checklist.context?.bias || "—"}
                 </div>
@@ -767,8 +767,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               <Card className="p-2 bg-card/50">
                 <div className="text-[9px] text-muted-foreground">SESSÃO</div>
                 <div className={`text-sm font-bold ${mtfData.checklist.context?.session === "LONDON" || mtfData.checklist.context?.session === "NY"
-                    ? "text-accent"
-                    : "text-muted-foreground"
+                  ? "text-accent"
+                  : "text-muted-foreground"
                   }`}>
                   {mtfData.checklist.context?.session || "—"}
                 </div>
@@ -825,10 +825,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-500 ${(mtfData.checklist.confluencePercentage || 0) >= 60
-                      ? "bg-success"
-                      : (mtfData.checklist.confluencePercentage || 0) >= 40
-                        ? "bg-warning"
-                        : "bg-destructive"
+                    ? "bg-success"
+                    : (mtfData.checklist.confluencePercentage || 0) >= 40
+                      ? "bg-warning"
+                      : "bg-destructive"
                     }`}
                   style={{ width: `${Math.min(mtfData.checklist.confluencePercentage || 0, 100)}%` }}
                 />
@@ -841,20 +841,20 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
 
           {/* 🔷 CAMADA 3: DECISION ENGINE */}
           <div className={`p-3 ${mtfData.checklist.decision?.execute
-              ? "bg-success/10"
-              : mtfData.checklist.context?.ready
-                ? "bg-warning/10"
-                : "bg-destructive/10"
+            ? "bg-success/10"
+            : mtfData.checklist.context?.ready
+              ? "bg-warning/10"
+              : "bg-destructive/10"
             }`}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
                 🔷 CAMADA 3: DECISÃO
               </h3>
               <Badge className={`text-xs font-bold ${mtfData.checklist.decision?.execute
-                  ? "bg-success"
-                  : mtfData.checklist.context?.ready
-                    ? "bg-warning text-warning-foreground"
-                    : "bg-destructive"
+                ? "bg-success"
+                : mtfData.checklist.context?.ready
+                  ? "bg-warning text-warning-foreground"
+                  : "bg-destructive"
                 }`}>
                 {mtfData.checklist.decision?.execute ? "EXECUTAR" : "HOLD"}
               </Badge>
@@ -865,8 +865,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[9px] text-muted-foreground">Score Combinado</span>
                 <span className={`text-sm font-bold ${(mtfData.checklist.decision?.combinedScore || 0) >= 55
-                    ? "text-success"
-                    : "text-warning"
+                  ? "text-success"
+                  : "text-warning"
                   }`}>
                   {(mtfData.checklist.decision?.combinedScore || 0).toFixed(0)}/100
                 </span>
@@ -875,8 +875,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
                 <div
                   className={`h-full transition-all duration-500 ${(mtfData.checklist.decision?.combinedScore || 0) >= 55
-                      ? "bg-success"
-                      : "bg-warning"
+                    ? "bg-success"
+                    : "bg-warning"
                     }`}
                   style={{ width: `${Math.min(mtfData.checklist.decision?.combinedScore || 0, 100)}%` }}
                 />
@@ -896,8 +896,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
 
             {/* Decision Reason */}
             <div className={`text-[10px] p-2 rounded border ${mtfData.checklist.decision?.execute
-                ? "bg-success/20 border-success/30 text-success"
-                : "bg-muted border-border text-muted-foreground"
+              ? "bg-success/20 border-success/30 text-success"
+              : "bg-muted border-border text-muted-foreground"
               }`}>
               {mtfData.checklist.decision?.reason || "Aguardando análise..."}
             </div>
@@ -946,8 +946,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                     <Card
                       key={signal.id}
                       className={`p-3 border-2 ${signal.type === "COMPRA"
-                          ? "border-success bg-success/10"
-                          : "border-destructive bg-destructive/10"
+                        ? "border-success bg-success/10"
+                        : "border-destructive bg-destructive/10"
                         }`}
                     >
                       <div className="flex justify-between items-center mb-2">

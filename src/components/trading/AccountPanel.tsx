@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useControlledPolling } from "@/hooks/useControlledPolling";
 
 type SyncStatus = "idle" | "syncing" | "success" | "error" | "needs_configuration";
 
@@ -20,7 +21,7 @@ export const AccountPanel = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [binanceStatus, setBinanceStatus] = useState<"success" | "failed" | "pending">("pending");
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
-  
+
   // Ref para controlar se deve tentar auto-sync (evita loop de erros)
   const shouldAutoSync = useRef(true);
 
@@ -77,7 +78,7 @@ export const AccountPanel = () => {
 
       const newBinanceStatus = (credentials?.test_status as any) || "pending";
       setBinanceStatus(newBinanceStatus);
-      
+
       // Se credenciais não são válidas, marcar como needs_configuration
       if (newBinanceStatus !== "success" && !settings?.paper_mode) {
         setSyncStatus("needs_configuration");
@@ -114,7 +115,7 @@ export const AccountPanel = () => {
   const syncRealBalance = useCallback(async () => {
     // 🔒 VALIDAÇÃO 0: Verificar se sessão é válida
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
+
     if (sessionError || !session) {
       setSyncStatus("error");
       setSyncError("Sessão expirada. Faça login novamente.");
@@ -170,7 +171,7 @@ export const AccountPanel = () => {
         const errorMsg = data.message || data.error || "Falha ao sincronizar";
         setSyncStatus("error");
         setSyncError(errorMsg);
-        
+
         if (errorMsg.includes("credenciais") || errorMsg.includes("API") || errorMsg.includes("autenticação")) {
           shouldAutoSync.current = false;
           setSyncStatus("needs_configuration");
@@ -195,11 +196,8 @@ export const AccountPanel = () => {
 
   const openSettings = () => setSettingsOpen(true);
 
-  useEffect(() => {
-    fetchAccountData();
-    const interval = setInterval(fetchAccountData, 10000);
-    return () => clearInterval(interval);
-  }, [fetchAccountData]);
+  // Usar polling controlado para evitar flickering (30s ao invés de 10s)
+  useControlledPolling(fetchAccountData, 30000);
 
   // Auto-sync quando em modo REAL com credenciais válidas (COM proteção contra loop)
   useEffect(() => {
@@ -213,15 +211,15 @@ export const AccountPanel = () => {
         }
         syncRealBalance();
       };
-      
+
       checkSessionAndSync();
-      
+
       const syncInterval = setInterval(() => {
         if (shouldAutoSync.current) {
           checkSessionAndSync();
         }
-      }, 30000);
-      
+      }, 60000); // Aumentado para 60s para reduzir flickering
+
       return () => clearInterval(syncInterval);
     }
   }, [paperMode, binanceStatus, user, syncRealBalance]);
@@ -237,7 +235,7 @@ export const AccountPanel = () => {
 
   const getSyncIndicator = () => {
     if (paperMode) return null;
-    
+
     switch (syncStatus) {
       case "syncing":
         return <RefreshCw className="w-3 h-3 text-primary animate-spin" />;
@@ -248,7 +246,7 @@ export const AccountPanel = () => {
       case "needs_configuration":
         return <ShieldAlert className="w-3 h-3 text-destructive" />;
       default:
-        return binanceStatus === "success" ? 
+        return binanceStatus === "success" ?
           <CheckCircle className="w-3 h-3 text-success" /> : null;
     }
   };
@@ -267,31 +265,31 @@ export const AccountPanel = () => {
         </div>
         <div className="flex items-center gap-1">
           {!paperMode && (
-            <Button 
-              size="sm" 
-              variant="ghost" 
+            <Button
+              size="sm"
+              variant="ghost"
               className="h-7 w-7 p-0"
               onClick={syncRealBalance}
               disabled={isSyncDisabled}
               title={
-                binanceStatus !== "success" 
-                  ? "Configure credenciais Binance primeiro" 
+                binanceStatus !== "success"
+                  ? "Configure credenciais Binance primeiro"
                   : "Sincronizar saldo da Binance"
               }
             >
               <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? 'animate-spin' : ''} ${isSyncDisabled && binanceStatus !== "success" ? 'text-muted-foreground' : ''}`} />
             </Button>
           )}
-          <Button 
-            size="sm" 
-            variant="ghost" 
+          <Button
+            size="sm"
+            variant="ghost"
             className="h-7"
             onClick={openSettings}
           >
             <Settings className="w-3 h-3" />
           </Button>
         </div>
-        
+
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
 
@@ -319,9 +317,9 @@ export const AccountPanel = () => {
               </p>
             </div>
           </div>
-          <Button 
-            size="sm" 
-            variant="outline" 
+          <Button
+            size="sm"
+            variant="outline"
             className="w-full mt-2 h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
             onClick={openSettings}
           >
@@ -339,9 +337,9 @@ export const AccountPanel = () => {
             <p className="text-xs text-destructive">
               Modo REAL sem conexão validada. Configure suas credenciais Binance.
             </p>
-            <Button 
-              size="sm" 
-              variant="link" 
+            <Button
+              size="sm"
+              variant="link"
               className="h-auto p-0 text-xs text-destructive underline"
               onClick={openSettings}
             >
@@ -357,8 +355,8 @@ export const AccountPanel = () => {
           <span className="text-xs text-muted-foreground uppercase">Saldo Total</span>
           <div className="flex items-center gap-2">
             {getSyncIndicator()}
-            <Badge 
-              variant={paperMode ? "outline" : "default"} 
+            <Badge
+              variant={paperMode ? "outline" : "default"}
               className={`text-xs ${!paperMode ? (binanceStatus === "success" ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground') : ''}`}
             >
               {paperMode ? "📄 Paper" : (binanceStatus === "success" ? "💰 REAL" : "⚠️ REAL")}
@@ -381,7 +379,7 @@ export const AccountPanel = () => {
           </span>
           <span className="text-xs text-muted-foreground">hoje</span>
         </div>
-        
+
         {/* Last sync time indicator */}
         {!paperMode && lastSyncTime && syncStatus === "success" && (
           <div className="mt-2 text-xs text-muted-foreground">
