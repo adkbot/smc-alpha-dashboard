@@ -65,11 +65,11 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
 
   // Criar/atualizar widget quando script estiver carregado ou símbolo/intervalo mudarem
   useEffect(() => {
-    console.log("🔄 useEffect de criação do widget disparado", { 
-      scriptLoaded, 
+    console.log("🔄 useEffect de criação do widget disparado", {
+      scriptLoaded,
       hasContainer: !!containerRef.current,
       symbol,
-      interval 
+      interval
     });
 
     if (!scriptLoaded || !containerRef.current) {
@@ -96,75 +96,94 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
     setIsLoading(true);
     setHasError(false);
 
-    // Destruir widget anterior se existir
+    // Destruir widget anterior se existir (com proteção)
     if (widgetRef.current) {
       try {
-        widgetRef.current.remove();
+        if (typeof widgetRef.current.remove === 'function') {
+          widgetRef.current.remove();
+        }
         widgetRef.current = null;
         console.log("🗑️ Widget anterior removido");
       } catch (error) {
-        console.error("⚠️ Erro ao remover widget:", error);
+        // Silenciar erros de removeChild - isso é esperado quando o TradingView já limpou
+        console.warn("⚠️ Aviso ao remover widget (esperado):", error);
+        widgetRef.current = null;
       }
     }
 
-    // Limpar container
-    containerRef.current.innerHTML = "";
+    // Limpar container com proteção
+    if (containerRef.current) {
+      try {
+        containerRef.current.innerHTML = "";
+      } catch (error) {
+        console.warn("⚠️ Erro ao limpar container:", error);
+      }
+    }
 
-    // Criar novo widget
-    try {
-      const tvInterval = convertInterval(interval);
-      console.log("📊 Criando widget com config:", {
-        symbol: `BINANCE:${symbol}`,
-        interval: tvInterval
-      });
-      
-      widgetRef.current = new (window as any).TradingView.widget({
-        container_id: "tradingview_chart",
-        autosize: true,
-        symbol: `BINANCE:${symbol}`,
-        interval: tvInterval,
-        timezone: "Etc/UTC",
-        theme: "dark",
-        style: "1",
-        locale: "pt_BR",
-        toolbar_bg: "#0a0a0f",
-        enable_publishing: false,
-        hide_side_toolbar: false,
-        allow_symbol_change: false,
-        hide_top_toolbar: false,
-        hide_legend: false,
-        studies: ["Volume@tv-basicstudies"],
-        support_host: "https://www.tradingview.com",
-      });
+    // Pequeno delay para evitar flickering rápido
+    const createTimeout = setTimeout(() => {
+      if (!containerRef.current) return;
 
-      console.log("📌 Widget criado, referência salva");
+      // Criar novo widget
+      try {
+        const tvInterval = convertInterval(interval);
+        console.log("📊 Criando widget com config:", {
+          symbol: `BINANCE:${symbol}`,
+          interval: tvInterval
+        });
 
-      // ESTRATÉGIA 1: Detectar quando iframe do TradingView aparecer
-      const checkInterval = setInterval(() => {
-        const iframe = containerRef.current?.querySelector('iframe');
-        if (iframe) {
-          console.log("✅ Iframe do TradingView detectado! Gráfico carregado");
+        widgetRef.current = new (window as any).TradingView.widget({
+          container_id: "tradingview_chart",
+          autosize: true,
+          symbol: `BINANCE:${symbol}`,
+          interval: tvInterval,
+          timezone: "Etc/UTC",
+          theme: "dark",
+          style: "1",
+          locale: "pt_BR",
+          toolbar_bg: "#0a0a0f",
+          enable_publishing: false,
+          hide_side_toolbar: false,
+          allow_symbol_change: false,
+          hide_top_toolbar: false,
+          hide_legend: false,
+          studies: ["Volume@tv-basicstudies"],
+          support_host: "https://www.tradingview.com",
+        });
+
+        console.log("📌 Widget criado, referência salva");
+
+        // ESTRATÉGIA 1: Detectar quando iframe do TradingView aparecer
+        const checkInterval = setInterval(() => {
+          const iframe = containerRef.current?.querySelector('iframe');
+          if (iframe) {
+            console.log("✅ Iframe do TradingView detectado! Gráfico carregado");
+            setIsLoading(false);
+            clearInterval(checkInterval);
+          }
+        }, 500);
+
+        // ESTRATÉGIA 2: Timeout de segurança (10 segundos)
+        const timeoutId = setTimeout(() => {
+          console.warn("⏱️ Timeout: Forçando remoção do loading após 10s");
           setIsLoading(false);
           clearInterval(checkInterval);
-        }
-      }, 500);
+        }, 10000);
 
-      // ESTRATÉGIA 2: Timeout de segurança (10 segundos)
-      const timeoutId = setTimeout(() => {
-        console.warn("⏱️ Timeout: Forçando remoção do loading após 10s");
+        return () => {
+          clearTimeout(timeoutId);
+          clearInterval(checkInterval);
+        };
+      } catch (error) {
+        console.error("❌ Erro crítico ao criar widget TradingView:", error);
         setIsLoading(false);
-        clearInterval(checkInterval);
-      }, 10000);
+        setHasError(true);
+      }
+    }, 300); // Delay de 300ms para suavizar transições
 
-      return () => {
-        clearTimeout(timeoutId);
-        clearInterval(checkInterval);
-      };
-    } catch (error) {
-      console.error("❌ Erro crítico ao criar widget TradingView:", error);
-      setIsLoading(false);
-      setHasError(true);
-    }
+    return () => {
+      clearTimeout(createTimeout);
+    };
   }, [scriptLoaded, symbol, interval]);
 
   // Effect para desenhar estruturas SMC quando dados mudarem
@@ -176,7 +195,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
 
   return (
     <div className="relative w-full h-full bg-background">
-      <TradingChartOverlay 
+      <TradingChartOverlay
         smcData={smcData || null}
       />
       {isLoading && !hasError && (
@@ -193,7 +212,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
           </div>
         </div>
       )}
-      
+
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
           <div className="text-center">
@@ -203,7 +222,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
             <p className="text-muted-foreground text-xs mb-4">
               Verifique o console para mais detalhes
             </p>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 text-sm text-primary-foreground bg-primary rounded hover:bg-primary/90 transition-colors"
             >
@@ -212,7 +231,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
           </div>
         </div>
       )}
-      
+
       <div
         id="tradingview_chart"
         ref={containerRef}
