@@ -21,5 +21,14 @@ verify_jwt = false
 [functions.close-position]
 verify_jwt = false
 
-[functions.vision-agent-signal]
+[functions.sync-binance-positions]
+verify_jwt = true
+
+[functions.ia-daily-training]
+verify_jwt = false
+
+[functions.ia-historical-training]
+verify_jwt = false
+
+[functions.ia-incremental-training]
 verify_jwt = false

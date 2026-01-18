@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Check, X } from "lucide-react";
+import { Loader2, Check, X, AlertTriangle, RefreshCw } from "lucide-react";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -21,20 +21,22 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [testingBinance, setTestingBinance] = useState(false);
   const [testingForex, setTestingForex] = useState(false);
-
+  const [syncingBalance, setSyncingBalance] = useState(false);
+  
   // Account Settings
   const [balance, setBalance] = useState("10000");
   const [leverage, setLeverage] = useState("20");
   const [riskPerTrade, setRiskPerTrade] = useState("0.06");
   const [maxPositions, setMaxPositions] = useState("3");
   const [paperMode, setPaperMode] = useState(true);
-  const [autoTrading, setAutoTrading] = useState(false);
-
+  
   // Binance API
   const [binanceKey, setBinanceKey] = useState("");
   const [binanceSecret, setBinanceSecret] = useState("");
   const [binanceStatus, setBinanceStatus] = useState<"success" | "failed" | "pending">("pending");
-
+  const [binanceFuturesOk, setBinanceFuturesOk] = useState(false);
+  const [binanceSpotOk, setBinanceSpotOk] = useState(false);
+  
   // Forex API
   const [forexBroker, setForexBroker] = useState("metatrader");
   const [forexKey, setForexKey] = useState("");
@@ -56,43 +58,32 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (settings) {
         setBalance(settings.balance.toString());
         setLeverage(settings.leverage?.toString() || "20");
-        setRiskPerTrade(settings.risk_per_trade?.toString() || "0.06");
+        // Converter de decimal para porcentagem para exibição (0.06 -> 6)
+        const riskValue = settings.risk_per_trade || 0.06;
+        setRiskPerTrade(riskValue < 1 ? (riskValue * 100).toString() : riskValue.toString());
         setMaxPositions(settings.max_positions?.toString() || "3");
         setPaperMode(settings.paper_mode ?? true);
-        setAutoTrading(settings.auto_trading_enabled ?? false);
       }
 
       const { data: credentials } = await supabase
         .from("user_api_credentials")
-        .select("broker_type, test_status, broker_name, encrypted_api_key, encrypted_api_secret")
+        .select("broker_type, test_status, broker_name, futures_ok, spot_ok")
         .eq("user_id", user.id);
 
       if (credentials) {
         credentials.forEach((cred) => {
           if (cred.broker_type === "binance") {
             setBinanceStatus(cred.test_status as any || "pending");
-            setBinanceStatus(cred.test_status as any || "pending");
-            // Only set keys if they are NOT masked/encrypted (legacy check)
-            // Ideally backend should return masked version or nothing.
-            // For now, we leave empty to force user to re-enter if they want to edit.
-            // Or we could show a placeholder.
-            if (cred.encrypted_api_key && !cred.encrypted_api_key.startsWith('eyJh')) {
-              // If it looks like a real key (64 chars), show it? 
-              // Security risk to show full key. Better to show empty or placeholder.
-              // User asked: "trocar máscara por string vazia ao abrir"
-              setBinanceKey("");
-            }
-            if (cred.encrypted_api_secret) setBinanceSecret("");
+            setBinanceFuturesOk(cred.futures_ok === true);
+            setBinanceSpotOk(cred.spot_ok === true);
           } else if (cred.broker_type === "forex") {
             setForexStatus(cred.test_status as any || "pending");
             if (cred.broker_name) setForexBroker(cred.broker_name);
-            if (cred.encrypted_api_key) setForexKey(cred.encrypted_api_key);
-            if (cred.encrypted_api_secret) setForexSecret(cred.encrypted_api_secret);
           }
         });
       }
@@ -107,23 +98,37 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
+      // Usar UPSERT em vez de UPDATE para criar se não existir
+      // Converter risk_per_trade para decimal se for maior que 1 (ex: 10% -> 0.10)
+      let riskValue = parseFloat(riskPerTrade);
+      if (riskValue > 1) {
+        riskValue = riskValue / 100; // Converter porcentagem para decimal
+      }
+      
       const { error } = await supabase
         .from("user_settings")
-        .update({
+        .upsert({
+          user_id: user.id,
           balance: parseFloat(balance),
           leverage: parseInt(leverage),
-          risk_per_trade: parseFloat(riskPerTrade),
+          risk_per_trade: riskValue,
           max_positions: parseInt(maxPositions),
           paper_mode: paperMode,
-          auto_trading_enabled: autoTrading,
-        })
-        .eq("user_id", user.id);
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
 
       if (error) throw error;
 
+      // Se desativou paper mode e tem Binance conectado, sincronizar saldo
+      if (!paperMode && binanceStatus === "success") {
+        await syncRealBalance();
+      }
+
       toast({
         title: "Configurações salvas",
-        description: "Suas configurações foram atualizadas com sucesso.",
+        description: paperMode 
+          ? "Suas configurações foram atualizadas com sucesso."
+          : "Modo REAL ativado. Saldo sincronizado da Binance.",
       });
     } catch (error: any) {
       toast({
@@ -133,6 +138,43 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const syncRealBalance = async () => {
+    setSyncingBalance(true);
+    try {
+      // Buscar da conta FUTURES por padrão (onde geralmente está o saldo de trading)
+      const { data, error } = await supabase.functions.invoke("sync-real-balance", {
+        body: { broker_type: "binance", account_type: "futures" },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setBalance(data.balance.toString());
+        const spotInfo = data.spotBalance > 0 ? `SPOT: $${data.spotBalance.toFixed(2)}` : '';
+        const futuresInfo = data.futuresBalance > 0 ? `FUTURES: $${data.futuresBalance.toFixed(2)}` : '';
+        const accountInfo = [spotInfo, futuresInfo].filter(Boolean).join(' | ');
+        
+        toast({
+          title: "Saldo Sincronizado",
+          description: `Total: $${data.balance.toFixed(2)}${accountInfo ? ` (${accountInfo})` : ''}`,
+        });
+      } else if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      return data;
+    } catch (error: any) {
+      console.error("Erro ao sincronizar saldo:", error);
+      toast({
+        title: "Erro ao sincronizar saldo",
+        description: error.message || "Falha ao sincronizar",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingBalance(false);
     }
   };
 
@@ -142,9 +184,6 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      // TEMPORARY FIX: Saving keys directly (unencrypted) because backend cannot decrypt Edge Function keys yet.
-      // The Edge Function call is disabled to ensure backend can read the keys.
-      /*
       const { data, error } = await supabase.functions.invoke("encrypt-api-credentials", {
         body: {
           broker_type: "binance",
@@ -153,82 +192,16 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         },
       });
 
-      if (error) {
-        console.error("Edge function failed, trying direct insert", error);
-      }
-      */
-
-      // Direct insert (Unencrypted for now)
-      const trimmedKey = binanceKey.trim();
-      const trimmedSecret = binanceSecret.trim();
-
-      // If keys are empty, just delete the credentials (disconnect)
-      if (!trimmedKey && !trimmedSecret) {
-        await supabase
-          .from("user_api_credentials")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("broker_type", "binance");
-
-        setBinanceStatus("pending");
-        toast({
-          title: "Credenciais Removidas",
-          description: "Suas chaves da Binance foram removidas com sucesso.",
-        });
-        setLoading(false);
-        return;
-      }
-
-      if (!trimmedKey || !trimmedSecret) {
-        throw new Error("Para conectar, você precisa preencher ambos os campos (Key e Secret). Para remover, limpe ambos.");
-      }
-
-      // Force delete existing credentials first to ensure clean state
-      await supabase
-        .from("user_api_credentials")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("broker_type", "binance");
-
-      const { error: directError } = await supabase
-        .from("user_api_credentials")
-        .insert({
-          user_id: user.id,
-          broker_type: "binance",
-          encrypted_api_key: trimmedKey, // Storing plain text
-          encrypted_api_secret: trimmedSecret,
-          test_status: "pending"
-        });
-
-      if (directError) throw directError;
-
-      // Automatically disable Paper Mode and Enable Auto Trading when keys are added
-      const { error: settingsError } = await supabase
-        .from("user_settings")
-        .update({
-          paper_mode: false,
-          auto_trading_enabled: true
-        })
-        .eq("user_id", user.id);
-
-      if (settingsError) {
-        console.error("Failed to auto-update settings:", settingsError);
-      } else {
-        setPaperMode(false);
-        setAutoTrading(true);
-        toast({
-          title: "Modo Real Ativado",
-          description: "Sua conta foi configurada para operar em Modo Real automaticamente.",
-        });
-      }
+      if (error) throw error;
 
       setBinanceStatus("pending");
       toast({
         title: "API Keys salvas",
-        description: "Suas credenciais da Binance foram salvas (Modo Direto).",
+        description: "Suas credenciais da Binance foram criptografadas e salvas.",
       });
-
-      // Keys are NOT cleared so the user can see them
+      
+      setBinanceKey("");
+      setBinanceSecret("");
     } catch (error: any) {
       toast({
         title: "Erro",
@@ -240,91 +213,78 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
     }
   };
 
-  const resetBinanceCredentials = async () => {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      // Call backend to delete keys
-      const response = await fetch('http://localhost:3000/api/binance/keys', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.id }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to reset credentials');
-      }
-
-      setBinanceKey("");
-      setBinanceSecret("");
-      setBinanceStatus("pending");
-
-      toast({
-        title: "Credenciais Resetadas",
-        description: "Suas credenciais da Binance foram removidas com sucesso.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Erro ao resetar",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [binanceErrorDetails, setBinanceErrorDetails] = useState<string | null>(null);
 
   const testBinanceConnection = async () => {
     setTestingBinance(true);
+    setBinanceErrorDetails(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      // Validate inputs before sending
-      const trimmedKey = binanceKey.trim();
-      const trimmedSecret = binanceSecret.trim();
-
-      if (!trimmedKey || !trimmedSecret) {
-        throw new Error("Preencha API Key e Secret para testar.");
-      }
-
-      if (trimmedKey.includes('••••') || trimmedSecret.includes('••••')) {
-        throw new Error("Não é possível testar com valores mascarados. Digite as chaves reais.");
-      }
-
-      // Call backend to test connection
-      const response = await fetch('http://localhost:3000/api/binance/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          apiKey: trimmedKey,
-          apiSecret: trimmedSecret,
-          userId: user.id
-        }),
+      const { data, error } = await supabase.functions.invoke("test-broker-connection", {
+        body: { broker_type: "binance" },
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Falha na conexão');
+      setBinanceStatus(data.status);
+      
+      // Atualizar estado local com permissões SPOT/FUTURES
+      setBinanceFuturesOk(data.futuresOk === true);
+      setBinanceSpotOk(data.spotOk === true);
+      
+      if (data.status === "success") {
+        // BACKUP: Forçar update direto no banco para garantir que status foi salvo
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) {
+          const { error: backupError } = await supabase
+            .from("user_api_credentials")
+            .update({ 
+              test_status: "success",
+              futures_ok: data.futuresOk === true,
+              spot_ok: data.spotOk === true,
+              last_tested_at: new Date().toISOString() 
+            })
+            .eq("user_id", currentUser.id)
+            .eq("broker_type", "binance");
+          
+          if (backupError) {
+            console.error("[SettingsDialog] Erro no backup update:", backupError);
+          } else {
+            console.log("[SettingsDialog] ✅ Backup update do status executado com sucesso");
+          }
+        }
+
+        // Mensagem diferente se FUTURES não está OK
+        if (data.futuresOk) {
+          toast({
+            title: "✅ Conexão bem-sucedida",
+            description: data.message,
+          });
+        } else {
+          toast({
+            title: "⚠️ Conexão parcial",
+            description: "SPOT funcionando, mas FUTURES não tem permissão. Habilite 'Enable Futures' na Binance.",
+            variant: "destructive",
+          });
+        }
+
+        // Se não está em paper mode, sincronizar saldo automaticamente
+        if (!paperMode) {
+          await syncRealBalance();
+        }
+      } else {
+        // Guardar detalhes do erro para exibição
+        setBinanceErrorDetails(data.message);
+        toast({
+          title: "❌ Falha na conexão",
+          description: "Verifique os detalhes do erro abaixo.",
+          variant: "destructive",
+        });
       }
-
-      setBinanceStatus("success");
-      toast({
-        title: "Conexão bem-sucedida",
-        description: "Credenciais válidas e conexão estabelecida!",
-      });
     } catch (error: any) {
       setBinanceStatus("failed");
+      setBinanceErrorDetails(error.message);
       toast({
-        title: "Erro na Conexão",
+        title: "Erro",
         description: error.message,
         variant: "destructive",
       });
@@ -348,29 +308,14 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         },
       });
 
-      if (error) {
-        console.error("Edge function failed, trying direct insert", error);
-        // Fallback: Direct insert (WARNING: Not encrypted)
-        const { error: directError } = await supabase
-          .from("user_api_credentials")
-          .upsert({
-            user_id: user.id,
-            broker_type: "forex",
-            broker_name: forexBroker,
-            encrypted_api_key: forexKey, // Storing plain text as fallback
-            encrypted_api_secret: forexSecret,
-            test_status: "pending"
-          }, { onConflict: "user_id, broker_type" });
-
-        if (directError) throw directError;
-      }
+      if (error) throw error;
 
       setForexStatus("pending");
       toast({
         title: "API Keys salvas",
-        description: "Suas credenciais Forex foram salvas.",
+        description: "Suas credenciais Forex foram criptografadas e salvas.",
       });
-
+      
       setForexKey("");
       setForexSecret("");
     } catch (error: any) {
@@ -417,9 +362,9 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       failed: { variant: "destructive" as const, icon: X, text: "Falha" },
       pending: { variant: "secondary" as const, icon: null, text: "Não testado" },
     };
-
+    
     const { variant, icon: Icon, text } = variants[status];
-
+    
     return (
       <Badge variant={variant} className="gap-1">
         {Icon && <Icon className="w-3 h-3" />}
@@ -433,9 +378,6 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Configurações</DialogTitle>
-          <DialogDescription>
-            Gerencie suas configurações de conta, APIs e preferências.
-          </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="account" className="w-full">
@@ -447,14 +389,49 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           </TabsList>
 
           <TabsContent value="account" className="space-y-4">
+            {/* Aviso se modo REAL sem credenciais validadas */}
+            {!paperMode && binanceStatus !== "success" && (
+              <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-destructive">
+                  <strong>Atenção:</strong> Modo REAL ativado mas credenciais Binance não validadas. 
+                  Configure e teste suas credenciais na aba Binance.
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="balance">Saldo Inicial ($)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="balance">Saldo ($)</Label>
+                {!paperMode && binanceStatus === "success" && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={syncRealBalance}
+                    disabled={syncingBalance}
+                    className="h-7 text-xs"
+                  >
+                    {syncingBalance ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                    )}
+                    Sincronizar Binance
+                  </Button>
+                )}
+              </div>
               <Input
                 id="balance"
                 type="number"
                 value={balance}
                 onChange={(e) => setBalance(e.target.value)}
+                disabled={!paperMode && binanceStatus === "success"}
               />
+              {!paperMode && binanceStatus === "success" && (
+                <p className="text-xs text-muted-foreground">
+                  Saldo sincronizado da Binance. Use o botão para atualizar.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -488,21 +465,19 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="paper">Modo Paper Trading</Label>
+            <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-md">
+              <div>
+                <Label htmlFor="paper" className="text-base">Modo Paper Trading</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {paperMode 
+                    ? "Operações simuladas, sem dinheiro real" 
+                    : "⚠️ MODO REAL - Operações com dinheiro real na Binance"}
+                </p>
+              </div>
               <Switch
                 id="paper"
                 checked={paperMode}
                 onCheckedChange={setPaperMode}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="autotrading">Auto Trading (Executar Sinais)</Label>
-              <Switch
-                id="autotrading"
-                checked={autoTrading}
-                onCheckedChange={setAutoTrading}
               />
             </div>
 
@@ -515,8 +490,80 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
           <TabsContent value="binance" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium">Status da Conexão</h3>
-              <StatusBadge status={binanceStatus} />
+              <div className="flex gap-2 items-center">
+                <StatusBadge status={binanceStatus} />
+              </div>
             </div>
+
+            {/* Status detalhado SPOT/FUTURES */}
+            {binanceStatus === "success" && (
+              <div className="p-3 bg-secondary/30 rounded-md space-y-2 mb-4">
+                <p className="text-xs font-medium text-muted-foreground">Permissões da API:</p>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-1">
+                    {binanceSpotOk ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : (
+                      <X className="w-3 h-3 text-destructive" />
+                    )}
+                    <span className={`text-xs ${binanceSpotOk ? 'text-success' : 'text-muted-foreground'}`}>SPOT</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {binanceFuturesOk ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : (
+                      <X className="w-3 h-3 text-destructive" />
+                    )}
+                    <span className={`text-xs ${binanceFuturesOk ? 'text-success' : 'text-destructive font-bold'}`}>
+                      FUTURES {!binanceFuturesOk && '(NECESSÁRIO)'}
+                    </span>
+                  </div>
+                </div>
+                {!binanceFuturesOk && (
+                  <p className="text-xs text-destructive mt-2">
+                    ⚠️ Sua API Key não tem permissão FUTURES. O bot não poderá executar ordens.
+                    Habilite "Enable Futures" na Binance API Management.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {binanceStatus === "pending" && (
+              <div className="p-3 bg-warning/10 border border-warning/30 rounded-md flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-warning">
+                  Credenciais não testadas. Clique em "Testar Conexão" para validar.
+                </div>
+              </div>
+            )}
+
+            {/* Exibir detalhes do erro se falhar */}
+            {binanceStatus === "failed" && binanceErrorDetails && (
+              <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md space-y-2">
+                <div className="flex items-start gap-2">
+                  <X className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-destructive whitespace-pre-line">
+                    {binanceErrorDetails}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2 border-t border-border pt-2">
+                  <strong>Requisitos da API Binance:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1">
+                    <li>Permissões: "Enable Reading" + "Enable Futures"</li>
+                    <li>IP Whitelist: Remova a restrição ou adicione IPs permitidos</li>
+                    <li>Copie API Key e Secret sem espaços extras</li>
+                  </ul>
+                  <a 
+                    href="https://www.binance.com/pt-BR/my/settings/api-management" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary underline mt-2 inline-block"
+                  >
+                    Abrir Gerenciamento de API na Binance →
+                  </a>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="binance-key">API Key</Label>
@@ -540,8 +587,8 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               />
             </div>
 
-            <div className="flex gap-2 flex-wrap">
-              <Button onClick={saveBinanceKeys} disabled={loading} className="flex-1">
+            <div className="flex gap-2">
+              <Button onClick={saveBinanceKeys} disabled={loading || !binanceKey || !binanceSecret} className="flex-1">
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Salvar
               </Button>
@@ -549,9 +596,37 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
                 {testingBinance && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Testar Conexão
               </Button>
-              <Button onClick={resetBinanceCredentials} disabled={loading} variant="destructive">
-                Resetar Credenciais
-              </Button>
+            </div>
+
+            {/* Checklist de requisitos */}
+            <div className="p-3 bg-secondary/50 rounded-md">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Checklist de Configuração:</p>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  API Key e Secret configurados
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Permissão "Enable Reading" ativa
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Permissão "Enable Futures" ativa (para trading)
+                </li>
+                <li className="flex items-center gap-1">
+                  <span className={binanceStatus === "success" ? "text-success" : "text-muted-foreground"}>
+                    {binanceStatus === "success" ? "✓" : "○"}
+                  </span>
+                  Conexão testada e validada
+                </li>
+              </ul>
             </div>
           </TabsContent>
 

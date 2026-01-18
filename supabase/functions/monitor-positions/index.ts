@@ -39,24 +39,29 @@ serve(async (req) => {
     console.log(`[MONITOR-POSITIONS] Monitorando ${positions.length} posições`);
 
     const closedPositions = [];
+    const updatedPositions = [];
 
     // 2. Verificar cada posição
     for (const position of positions) {
       try {
         // Buscar preço atual da Binance
+        const symbol = position.asset.replace('/', '').toUpperCase();
         const priceResponse = await fetch(
-          `https://api.binance.com/api/v3/ticker/price?symbol=${position.asset}`
+          `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
         );
         const priceData = await priceResponse.json();
         const currentPrice = parseFloat(priceData.price);
 
         console.log(`[MONITOR-POSITIONS] ${position.asset}: Preço atual $${currentPrice}`);
 
-        // Calcular PnL
+        // Calcular PnL baseado na direção
         const quantity = position.projected_profit / Math.abs(position.take_profit - position.entry_price);
         let pnl = 0;
         
-        if (position.direction === 'LONG') {
+        // Corrigir para aceitar tanto LONG/SHORT quanto BUY/SELL
+        const isLong = position.direction === 'LONG' || position.direction === 'BUY';
+        
+        if (isLong) {
           pnl = (currentPrice - position.entry_price) * quantity;
         } else {
           pnl = (position.entry_price - currentPrice) * quantity;
@@ -65,54 +70,67 @@ serve(async (req) => {
         // 3. Verificar se SL ou TP foram atingidos
         let shouldClose = false;
         let result: 'WIN' | 'LOSS' | null = null;
+        let exitPrice = currentPrice;
 
-        if (position.direction === 'LONG') {
+        if (isLong) {
           if (currentPrice <= position.stop_loss) {
             shouldClose = true;
             result = 'LOSS';
-            console.log(`[MONITOR-POSITIONS] 🔴 SL atingido em ${position.asset}`);
+            exitPrice = position.stop_loss;
+            console.log(`[MONITOR-POSITIONS] 🔴 SL atingido em ${position.asset} (LONG)`);
           } else if (currentPrice >= position.take_profit) {
             shouldClose = true;
             result = 'WIN';
-            console.log(`[MONITOR-POSITIONS] 🟢 TP atingido em ${position.asset}`);
+            exitPrice = position.take_profit;
+            console.log(`[MONITOR-POSITIONS] 🟢 TP atingido em ${position.asset} (LONG)`);
           }
         } else {
           if (currentPrice >= position.stop_loss) {
             shouldClose = true;
             result = 'LOSS';
-            console.log(`[MONITOR-POSITIONS] 🔴 SL atingido em ${position.asset}`);
+            exitPrice = position.stop_loss;
+            console.log(`[MONITOR-POSITIONS] 🔴 SL atingido em ${position.asset} (SHORT)`);
           } else if (currentPrice <= position.take_profit) {
             shouldClose = true;
             result = 'WIN';
-            console.log(`[MONITOR-POSITIONS] 🟢 TP atingido em ${position.asset}`);
+            exitPrice = position.take_profit;
+            console.log(`[MONITOR-POSITIONS] 🟢 TP atingido em ${position.asset} (SHORT)`);
           }
         }
 
         // 4. Fechar posição se necessário
         if (shouldClose && result) {
+          console.log(`[MONITOR-POSITIONS] Fechando posição ${position.id} com resultado ${result}`);
+          
           const closeResponse = await fetch(`${supabaseUrl}/functions/v1/close-position`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+              'Authorization': `Bearer ${supabaseServiceKey}`,
             },
             body: JSON.stringify({
               positionId: position.id,
-              exitPrice: currentPrice,
+              exitPrice: exitPrice,
               result,
             }),
           });
 
           if (closeResponse.ok) {
+            const closeData = await closeResponse.json();
             closedPositions.push({
               asset: position.asset,
               result,
-              pnl,
+              pnl: closeData.pnl || pnl,
+              exitPrice,
             });
+            console.log(`[MONITOR-POSITIONS] ✅ Posição fechada: ${position.asset} - ${result}`);
+          } else {
+            const errorText = await closeResponse.text();
+            console.error(`[MONITOR-POSITIONS] ❌ Erro ao fechar posição: ${errorText}`);
           }
         } else {
           // 5. Atualizar current_price e current_pnl
-          await supabase
+          const { error: updateError } = await supabase
             .from('active_positions')
             .update({
               current_price: currentPrice,
@@ -120,6 +138,14 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq('id', position.id);
+
+          if (!updateError) {
+            updatedPositions.push({
+              asset: position.asset,
+              currentPrice,
+              pnl,
+            });
+          }
         }
 
       } catch (error: any) {
@@ -127,14 +153,18 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[MONITOR-POSITIONS] ✅ Verificação concluída. Posições fechadas: ${closedPositions.length}`);
+    console.log(`[MONITOR-POSITIONS] ✅ Verificação concluída.`);
+    console.log(`[MONITOR-POSITIONS] Posições fechadas: ${closedPositions.length}`);
+    console.log(`[MONITOR-POSITIONS] Posições atualizadas: ${updatedPositions.length}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         positionsChecked: positions.length,
         positionsClosed: closedPositions.length,
+        positionsUpdated: updatedPositions.length,
         closedPositions,
+        updatedPositions,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

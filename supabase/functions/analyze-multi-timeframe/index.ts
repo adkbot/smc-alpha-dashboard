@@ -1,10 +1,102 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// ==================== SISTEMA IA EVOLUTIVA ====================
+
+interface IALearningData {
+  padraoId: string;
+  taxaAcerto: number;
+  vezesTestado: number;
+  confianca: "ALTA" | "MEDIA" | "BAIXA" | "NEUTRO";
+  ajusteAplicado: string;
+}
+
+// Determinar sessão de trading atual
+function getTradingSession(): string {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  
+  if (utcHour >= 21 || utcHour < 6) return 'OCEANIA';
+  if (utcHour >= 6 && utcHour < 8) return 'ASIA';
+  if (utcHour >= 8 && utcHour < 13) return 'LONDON';
+  return 'NY';
+}
+
+// Consultar aprendizado IA para o padrão atual
+async function consultarAprendizadoIA(
+  supabase: any,
+  userId: string | null,
+  sweepType: string,
+  structureType: string,
+  fvgType: string,
+  zoneType: string
+): Promise<IALearningData | null> {
+  if (!userId) return null;
+  
+  try {
+    const sessionType = getTradingSession();
+    const padraoId = `${sweepType || 'none'}_${structureType || 'none'}_${fvgType || 'none'}_${zoneType || 'none'}_${sessionType}`;
+    
+    const { data: pattern } = await supabase
+      .from('ia_learning_patterns')
+      .select('taxa_acerto, vezes_testado, recompensa_acumulada')
+      .eq('user_id', userId)
+      .eq('padrao_id', padraoId)
+      .single();
+    
+    if (!pattern) {
+      return {
+        padraoId,
+        taxaAcerto: 50,
+        vezesTestado: 0,
+        confianca: "NEUTRO",
+        ajusteAplicado: "Padrão novo - sem histórico",
+      };
+    }
+    
+    // Determinar nível de confiança
+    let confianca: "ALTA" | "MEDIA" | "BAIXA" | "NEUTRO";
+    let ajuste: string;
+    
+    if (pattern.vezes_testado < 5) {
+      confianca = "NEUTRO";
+      ajuste = "Dados insuficientes (<5 trades)";
+    } else if (pattern.taxa_acerto >= 60) {
+      confianca = "ALTA";
+      ajuste = "Padrão lucrativo - entrada priorizada";
+    } else if (pattern.taxa_acerto >= 45) {
+      confianca = "MEDIA";
+      ajuste = "Padrão neutro - filtros padrão";
+    } else if (pattern.taxa_acerto >= 35) {
+      confianca = "BAIXA";
+      ajuste = "⚠️ Taxa baixa - aumentar rigor de volume +20%";
+    } else {
+      confianca = "BAIXA";
+      ajuste = "🚫 Padrão arriscado (<35%) - considerar evitar";
+    }
+    
+    console.log(`[IA-LEARNING] 🧠 Padrão: ${padraoId} | Taxa: ${pattern.taxa_acerto.toFixed(1)}% | Conf: ${confianca}`);
+    
+    return {
+      padraoId,
+      taxaAcerto: pattern.taxa_acerto,
+      vezesTestado: pattern.vezes_testado,
+      confianca,
+      ajusteAplicado: ajuste,
+    };
+  } catch (error) {
+    console.error('[IA-LEARNING] Erro ao consultar:', error);
+    return null;
+  }
+}
+
+// ==================== INTERFACES TRADE RAIZ EVOLUÍDO ====================
 
 interface Candle {
   time: number;
@@ -21,6 +113,23 @@ interface SwingPoint {
   type: "high" | "low";
 }
 
+// NOVO: Interface para detecção de Sweep (Varredura de Liquidez)
+interface SweepDetection {
+  detected: boolean;
+  type: "sweep_low" | "sweep_high" | null;
+  level: number | null;
+  timestamp: number | null;
+  description: string;
+}
+
+interface BOSS {
+  tipo: "alta" | "baixa";
+  preco_rompido: number;
+  indice_rompimento: number;
+  vela_fechamento: number;
+  confirmado: boolean;
+}
+
 interface BOSCHOCHResult {
   trend: "ALTA" | "BAIXA" | "NEUTRO";
   lastBOS: number | null;
@@ -28,6 +137,7 @@ interface BOSCHOCHResult {
   confidence: number;
   bosCount: number;
   chochCount: number;
+  boss: BOSS | null;
 }
 
 interface PremiumDiscountResult {
@@ -37,6 +147,7 @@ interface PremiumDiscountResult {
   rangePercentage: number;
   status: "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT";
   statusDescription: string;
+  fib_50: number;
 }
 
 interface FVG {
@@ -54,10 +165,13 @@ interface OrderBlock {
   type: "bullish" | "bearish";
   top: number;
   bottom: number;
+  open: number;
+  close: number;
   midpoint: number;
   volume: number;
   strength: number;
   confirmed: boolean;
+  fvg_presente: boolean;
 }
 
 interface ManipulationZone {
@@ -87,7 +201,305 @@ interface POI {
   targetSwing: TargetSwing;
 }
 
-// Detecta swing points (highs e lows) nos candles
+// ==================== 🆕 CAMADA 1: CONTEXT ENGINE ====================
+
+interface TradingContext {
+  ready: boolean;
+  bias: "BULL" | "BEAR" | "RANGE" | null;
+  biasStrength: "FORTE" | "MODERADO" | "FRACO";
+  rangeHigh: number;
+  rangeLow: number;
+  session: "OCEANIA" | "ASIA" | "LONDON" | "NY";
+}
+
+// ==================== 🆕 CAMADA 3: DECISION ENGINE ====================
+
+interface TradeDecision {
+  execute: boolean;
+  reason: string;
+  confluenceScore: number;
+  patternScore: number;
+  combinedScore: number;
+}
+
+// PRE-LIST TRADE RAIZ EVOLUÍDO - CONFLUENCE SCORE SYSTEM (CAMADA 2: SETUPS)
+interface TraderRaizChecklist {
+  // 🆕 CONTEXTO (Camada 1)
+  context: TradingContext;
+  
+  // Critério 1: Sweep detectado
+  sweepDetected: boolean;
+  sweepType: "sweep_low" | "sweep_high" | null;
+  sweepLevel: number | null;
+  
+  // Critério 2: CHOCH/BOS confirmado
+  structureConfirmed: boolean;
+  structureType: "BOS" | "CHOCH" | null;
+  structurePrice: number | null;
+  
+  // Critério 3: FVG presente após sweep
+  fvgPresent: boolean;
+  fvgType: "bullish" | "bearish" | null;
+  
+  // Critério 4: Zona correta (Discount para compras, Premium para vendas)
+  zoneCorrect: boolean;
+  zoneName: "PREMIUM" | "DISCOUNT" | "EQUILIBRIUM";
+  
+  // Critério 5: R:R >= 2.5:1
+  riskRewardValid: boolean;
+  riskRewardValue: number;
+  
+  // Campos legacy para compatibilidade
+  swingsMapped: boolean;
+  swingsCount: number;
+  trendDefined: boolean;
+  trendDirection: "ALTA" | "BAIXA" | "NEUTRO";
+  structureBroken: boolean;
+  bossConfirmado: boolean;
+  zoneAligned: boolean;
+  manipulationIdentified: boolean;
+  manipulationZonesCount: number;
+  orderBlockLocated: boolean;
+  orderBlockRange: string;
+  orderBlockStrength: number;
+  orderBlockEntry50: number | null;
+  entryConfirmed: boolean;
+  
+  // 🆕 CONFLUENCE SCORE
+  confluenceScore: number;
+  confluenceMaxScore: number;
+  confluencePercentage: number;
+  confluenceFactors: string[];
+  
+  // 🆕 DECISION ENGINE (Camada 3)
+  decision: TradeDecision;
+  
+  // Resultado final (legacy, agora vem do decision)
+  criteriaCount: number;
+  allCriteriaMet: boolean;
+  conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
+  reasoning: string;
+}
+
+// ==================== MÓDULO DE LIQUIDEZ (SWEEP DETECTION) ====================
+
+function detectSweep(candles: Candle[], swings: SwingPoint[]): SweepDetection {
+  if (candles.length < 3 || swings.length < 2) {
+    return { detected: false, type: null, level: null, timestamp: null, description: "Dados insuficientes" };
+  }
+  
+  const current = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  
+  // Pegar swings recentes
+  const recentLows = swings.filter(s => s.type === "low").slice(-5);
+  const recentHighs = swings.filter(s => s.type === "high").slice(-5);
+  
+  // SWEEP LOW (Stop Hunt de fundos): Preço violou o fundo mas FECHOU acima
+  for (const swingLow of recentLows) {
+    const hasSweeptLow = prev.low < swingLow.price && prev.close > swingLow.price;
+    const currentConfirms = current.close > swingLow.price;
+    
+    if (hasSweeptLow && currentConfirms) {
+      console.log(`[SWEEP] 🎯 SWEEP LOW detectado @ $${swingLow.price.toFixed(2)}`);
+      return {
+        detected: true,
+        type: "sweep_low",
+        level: swingLow.price,
+        timestamp: candles[candles.length - 2].time,
+        description: `Varredura de liquidez em $${swingLow.price.toFixed(2)} - Setup LONG`
+      };
+    }
+  }
+  
+  // SWEEP HIGH (Stop Hunt de topos): Preço violou o topo mas FECHOU abaixo
+  for (const swingHigh of recentHighs) {
+    const hasSweeptHigh = prev.high > swingHigh.price && prev.close < swingHigh.price;
+    const currentConfirms = current.close < swingHigh.price;
+    
+    if (hasSweeptHigh && currentConfirms) {
+      console.log(`[SWEEP] 🎯 SWEEP HIGH detectado @ $${swingHigh.price.toFixed(2)}`);
+      return {
+        detected: true,
+        type: "sweep_high",
+        level: swingHigh.price,
+        timestamp: candles[candles.length - 2].time,
+        description: `Varredura de liquidez em $${swingHigh.price.toFixed(2)} - Setup SHORT`
+      };
+    }
+  }
+  
+  return { detected: false, type: null, level: null, timestamp: null, description: "Sem sweep detectado" };
+}
+
+// ==================== AGENTE DE ESTRUTURA ====================
+
+function detectSwingPoints(
+  candles: Candle[],
+  leftBars: number = 3,
+  rightBars: number = 3
+): SwingPoint[] {
+  const swingPoints: SwingPoint[] = [];
+
+  for (let i = leftBars; i < candles.length - rightBars; i++) {
+    const current = candles[i];
+    let isSwingHigh = true;
+    let isSwingLow = true;
+
+    for (let j = i - leftBars; j <= i + rightBars; j++) {
+      if (j !== i && candles[j].high >= current.high) {
+        isSwingHigh = false;
+        break;
+      }
+    }
+
+    for (let j = i - leftBars; j <= i + rightBars; j++) {
+      if (j !== i && candles[j].low <= current.low) {
+        isSwingLow = false;
+        break;
+      }
+    }
+
+    if (isSwingHigh) {
+      swingPoints.push({ index: i, price: current.high, type: "high" });
+    }
+
+    if (isSwingLow) {
+      swingPoints.push({ index: i, price: current.low, type: "low" });
+    }
+  }
+
+  return swingPoints;
+}
+
+function detectBOSS(candles: Candle[], swings: SwingPoint[]): BOSS | null {
+  if (swings.length < 2) return null;
+  
+  const highs = swings.filter(s => s.type === "high").sort((a, b) => a.index - b.index);
+  const lows = swings.filter(s => s.type === "low").sort((a, b) => a.index - b.index);
+  
+  if (highs.length < 1 || lows.length < 1) return null;
+  
+  const ultimoClose = candles[candles.length - 1].close;
+  
+  // BOSS de BAIXA
+  const ultimoSwingLow = lows[lows.length - 1];
+  if (ultimoClose < ultimoSwingLow.price) {
+    return {
+      tipo: "baixa",
+      preco_rompido: ultimoSwingLow.price,
+      indice_rompimento: candles.length - 1,
+      vela_fechamento: ultimoClose,
+      confirmado: true
+    };
+  }
+  
+  // BOSS de ALTA
+  const ultimoSwingHigh = highs[highs.length - 1];
+  if (ultimoClose > ultimoSwingHigh.price) {
+    return {
+      tipo: "alta",
+      preco_rompido: ultimoSwingHigh.price,
+      indice_rompimento: candles.length - 1,
+      vela_fechamento: ultimoClose,
+      confirmado: true
+    };
+  }
+  
+  return null;
+}
+
+function detectBOSandCHOCH(candles: Candle[], swings: SwingPoint[]): BOSCHOCHResult {
+  const highs = swings.filter(s => s.type === "high").sort((a, b) => a.index - b.index);
+  const lows = swings.filter(s => s.type === "low").sort((a, b) => a.index - b.index);
+  const currentPrice = candles[candles.length - 1].close;
+
+  if (highs.length < 1 || lows.length < 1) {
+    return {
+      trend: "NEUTRO",
+      lastBOS: null,
+      lastCHOCH: null,
+      confidence: 30,
+      bosCount: 0,
+      chochCount: 0,
+      boss: null,
+    };
+  }
+
+  const boss = detectBOSS(candles, swings);
+  
+  let currentTrend: "ALTA" | "BAIXA" | "NEUTRO" = "NEUTRO";
+  let bosCount = 0;
+  let chochCount = 0;
+  let lastBOS: number | null = null;
+  let lastCHOCH: number | null = null;
+
+  if (boss && boss.confirmado) {
+    currentTrend = boss.tipo === "alta" ? "ALTA" : "BAIXA";
+    lastBOS = candles[boss.indice_rompimento].time;
+    bosCount = 1;
+  } else {
+    const recentHighs = highs.slice(-3);
+    const recentLows = lows.slice(-3);
+    
+    if (recentHighs.length >= 2 && recentLows.length >= 2) {
+      const lastHigh = recentHighs[recentHighs.length - 1];
+      const prevHigh = recentHighs[recentHighs.length - 2];
+      const lastLow = recentLows[recentLows.length - 1];
+      const prevLow = recentLows[recentLows.length - 2];
+      
+      if (lastHigh.price > prevHigh.price && lastLow.price > prevLow.price) {
+        currentTrend = "ALTA";
+        lastBOS = candles[lastHigh.index].time;
+        bosCount = 1;
+      }
+      else if (lastHigh.price < prevHigh.price && lastLow.price < prevLow.price) {
+        currentTrend = "BAIXA";
+        lastBOS = candles[lastLow.index].time;
+        bosCount = 1;
+      }
+    }
+  }
+
+  // Detectar CHOCH
+  const recentHighs = highs.slice(-2);
+  const recentLows = lows.slice(-2);
+  
+  if (recentHighs.length >= 2 && recentLows.length >= 2) {
+    const prevHigh = recentHighs[recentHighs.length - 2];
+    const prevLow = recentLows[recentLows.length - 2];
+    
+    if (currentTrend === "ALTA" && currentPrice < prevLow.price) {
+      lastCHOCH = candles[candles.length - 1].time;
+      chochCount = 1;
+    }
+    if (currentTrend === "BAIXA" && currentPrice > prevHigh.price) {
+      lastCHOCH = candles[candles.length - 1].time;
+      chochCount = 1;
+    }
+  }
+
+  let confidence = 40;
+  if (currentTrend !== "NEUTRO") {
+    confidence = 60;
+    if (boss?.confirmado) confidence += 20;
+    if (lastBOS) confidence += 10;
+    if (confidence > 95) confidence = 95;
+  }
+
+  return {
+    trend: currentTrend,
+    lastBOS,
+    lastCHOCH,
+    confidence,
+    bosCount,
+    chochCount,
+    boss,
+  };
+}
+
+// ==================== AGENTE PREMIUM/DISCOUNT ====================
+
 function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): PremiumDiscountResult {
   const currentPrice = candles[candles.length - 1].close;
   
@@ -102,6 +514,7 @@ function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): Prem
       rangePercentage: 50,
       status: "EQUILIBRIUM",
       statusDescription: "Range indefinido",
+      fib_50: currentPrice,
     };
   }
   
@@ -112,15 +525,17 @@ function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): Prem
   const priceFromLow = currentPrice - rangeLow;
   const rangePercentage = rangeSize > 0 ? (priceFromLow / rangeSize) * 100 : 50;
   
+  const fib_50 = rangeLow + (rangeSize * 0.5);
+  
   let status: "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT";
   let statusDescription: string;
   
-  if (rangePercentage >= 60) {
+  if (rangePercentage > 50) {
     status = "PREMIUM";
-    statusDescription = "Zona de Venda (Premium)";
-  } else if (rangePercentage <= 40) {
+    statusDescription = "Zona de Venda (Premium > 50%)";
+  } else if (rangePercentage < 50) {
     status = "DISCOUNT";
-    statusDescription = "Zona de Compra (Discount)";
+    statusDescription = "Zona de Compra (Discount < 50%)";
   } else {
     status = "EQUILIBRIUM";
     statusDescription = "Equilíbrio (50%)";
@@ -133,248 +548,76 @@ function calculatePremiumDiscount(candles: Candle[], swings: SwingPoint[]): Prem
     rangePercentage: Math.max(0, Math.min(100, rangePercentage)),
     status,
     statusDescription,
+    fib_50,
   };
 }
 
-function detectSwingPoints(
-  candles: Candle[],
-  leftBars: number = 5,
-  rightBars: number = 5
-): SwingPoint[] {
-  const swingPoints: SwingPoint[] = [];
-
-  for (let i = leftBars; i < candles.length - rightBars; i++) {
-    const current = candles[i];
-    let isSwingHigh = true;
-    let isSwingLow = true;
-
-    // Verificar se é swing high
-    for (let j = i - leftBars; j <= i + rightBars; j++) {
-      if (j !== i && candles[j].high >= current.high) {
-        isSwingHigh = false;
-        break;
-      }
-    }
-
-    // Verificar se é swing low
-    for (let j = i - leftBars; j <= i + rightBars; j++) {
-      if (j !== i && candles[j].low <= current.low) {
-        isSwingLow = false;
-        break;
-      }
-    }
-
-    if (isSwingHigh) {
-      swingPoints.push({
-        index: i,
-        price: current.high,
-        type: "high",
-      });
-    }
-
-    if (isSwingLow) {
-      swingPoints.push({
-        index: i,
-        price: current.low,
-        type: "low",
-      });
-    }
-  }
-
-  return swingPoints;
-}
-
-// Detecta BOS (Break of Structure) e CHOCH (Change of Character)
-function detectBOSandCHOCH(candles: Candle[], swings: SwingPoint[]): BOSCHOCHResult {
-  const highs = swings.filter(s => s.type === "high").sort((a, b) => a.index - b.index);
-  const lows = swings.filter(s => s.type === "low").sort((a, b) => a.index - b.index);
-
-  if (highs.length < 2 || lows.length < 2) {
-    return {
-      trend: "NEUTRO",
-      lastBOS: null,
-      lastCHOCH: null,
-      confidence: 30,
-      bosCount: 0,
-      chochCount: 0,
-    };
-  }
-
-  // Identificar trend atual baseado em Higher Highs/Higher Lows ou Lower Highs/Lower Lows
-  let currentTrend: "ALTA" | "BAIXA" | "NEUTRO" = "NEUTRO";
-  let bosCount = 0;
-  let chochCount = 0;
-  let lastBOS: number | null = null;
-  let lastCHOCH: number | null = null;
-
-  // Analisar sequência de highs e lows
-  const recentHighs = highs.slice(-3);
-  const recentLows = lows.slice(-3);
-
-  // Detectar Higher Highs e Higher Lows (UPTREND)
-  let hasHigherHighs = true;
-  let hasHigherLows = true;
-  
-  for (let i = 1; i < recentHighs.length; i++) {
-    if (recentHighs[i].price <= recentHighs[i - 1].price) {
-      hasHigherHighs = false;
-    }
-  }
-  
-  for (let i = 1; i < recentLows.length; i++) {
-    if (recentLows[i].price <= recentLows[i - 1].price) {
-      hasHigherLows = false;
-    }
-  }
-
-  // Detectar Lower Highs e Lower Lows (DOWNTREND)
-  let hasLowerHighs = true;
-  let hasLowerLows = true;
-  
-  for (let i = 1; i < recentHighs.length; i++) {
-    if (recentHighs[i].price >= recentHighs[i - 1].price) {
-      hasLowerHighs = false;
-    }
-  }
-  
-  for (let i = 1; i < recentLows.length; i++) {
-    if (recentLows[i].price >= recentLows[i - 1].price) {
-      hasLowerLows = false;
-    }
-  }
-
-  // Determinar trend
-  if (hasHigherHighs && hasHigherLows) {
-    currentTrend = "ALTA";
-    
-    // BOS em ALTA: novo high > high anterior
-    if (recentHighs.length >= 2) {
-      const lastHigh = recentHighs[recentHighs.length - 1];
-      const prevHigh = recentHighs[recentHighs.length - 2];
-      if (lastHigh.price > prevHigh.price) {
-        lastBOS = candles[lastHigh.index].time;
-        bosCount++;
-      }
-    }
-    
-    // CHOCH em ALTA: preço quebrou último low (contra tendência)
-    if (recentLows.length >= 2) {
-      const lastLow = recentLows[recentLows.length - 1];
-      const prevLow = recentLows[recentLows.length - 2];
-      if (lastLow.price < prevLow.price) {
-        lastCHOCH = candles[lastLow.index].time;
-        chochCount++;
-      }
-    }
-  } else if (hasLowerHighs && hasLowerLows) {
-    currentTrend = "BAIXA";
-    
-    // BOS em BAIXA: novo low < low anterior
-    if (recentLows.length >= 2) {
-      const lastLow = recentLows[recentLows.length - 1];
-      const prevLow = recentLows[recentLows.length - 2];
-      if (lastLow.price < prevLow.price) {
-        lastBOS = candles[lastLow.index].time;
-        bosCount++;
-      }
-    }
-    
-    // CHOCH em BAIXA: preço quebrou último high (contra tendência)
-    if (recentHighs.length >= 2) {
-      const lastHigh = recentHighs[recentHighs.length - 1];
-      const prevHigh = recentHighs[recentHighs.length - 2];
-      if (lastHigh.price > prevHigh.price) {
-        lastCHOCH = candles[lastHigh.index].time;
-        chochCount++;
-      }
-    }
-  }
-
-  // Calcular confidence
-  let confidence = 30;
-  if (currentTrend !== "NEUTRO") {
-    confidence = 60;
-    if (lastBOS) confidence += 20;
-    if (bosCount > 1) confidence += 10;
-    if (confidence > 95) confidence = 95;
-  }
-
-  return {
-    trend: currentTrend,
-    lastBOS,
-    lastCHOCH,
-    confidence,
-    bosCount,
-    chochCount,
-  };
-}
-
-// Determina o viés dominante baseado nos timeframes superiores
 function determineDominantBias(higherTF: Record<string, BOSCHOCHResult>) {
   const d1 = higherTF["1d"];
   const h4 = higherTF["4h"];
   const h1 = higherTF["1h"];
 
-  // Se 1D e 4H concordam com BOS confirmado = viés FORTE
-  if (d1.trend === "ALTA" && h4.trend === "ALTA" && d1.lastBOS && h4.lastBOS) {
+  const trends = [d1.trend, h4.trend, h1.trend];
+  const altaCount = trends.filter(t => t === "ALTA").length;
+  const baixaCount = trends.filter(t => t === "BAIXA").length;
+
+  const hasBOSSConfirmado = d1.boss?.confirmado || h4.boss?.confirmado || h1.boss?.confirmado;
+
+  if (altaCount >= 2) {
     return {
       bias: "ALTA" as const,
-      strength: "FORTE",
-      reasoning: "Diário e 4H em alta com BOS confirmado",
+      strength: hasBOSSConfirmado ? "FORTE" : "MODERADO",
+      reasoning: `${altaCount}/3 TFs em alta${hasBOSSConfirmado ? ' com BOSS confirmado' : ''}`,
     };
   }
 
-  if (d1.trend === "BAIXA" && h4.trend === "BAIXA" && d1.lastBOS && h4.lastBOS) {
+  if (baixaCount >= 2) {
     return {
       bias: "BAIXA" as const,
-      strength: "FORTE",
-      reasoning: "Diário e 4H em baixa com BOS confirmado",
+      strength: hasBOSSConfirmado ? "FORTE" : "MODERADO",
+      reasoning: `${baixaCount}/3 TFs em baixa${hasBOSSConfirmado ? ' com BOSS confirmado' : ''}`,
     };
   }
 
-  // Se 1D e 4H em alta, mas sem BOS claro = viés MODERADO
-  if (d1.trend === "ALTA" && h4.trend === "ALTA") {
+  if (altaCount === 1 && baixaCount === 0) {
     return {
       bias: "ALTA" as const,
-      strength: "MODERADO",
-      reasoning: "Diário e 4H em alta, aguardando BOS para confirmar força",
+      strength: "FRACA",
+      reasoning: "Um TF superior em alta, demais neutros",
     };
   }
 
-  if (d1.trend === "BAIXA" && h4.trend === "BAIXA") {
+  if (baixaCount === 1 && altaCount === 0) {
     return {
       bias: "BAIXA" as const,
-      strength: "MODERADO",
-      reasoning: "Diário e 4H em baixa, aguardando BOS para confirmar força",
+      strength: "FRACA",
+      reasoning: "Um TF superior em baixa, demais neutros",
     };
   }
 
-  // Divergência entre 1D e 4H = viés MISTO
-  if (d1.trend === "ALTA" && h4.trend === "BAIXA") {
+  if (altaCount === 1 && baixaCount === 1) {
     return {
       bias: "MISTO" as const,
       strength: "FRACA",
-      reasoning: "Divergência: Diário em alta mas 4H em baixa - Aguardar alinhamento",
+      reasoning: "Divergência entre TFs - Operar com cautela",
     };
   }
 
-  if (d1.trend === "BAIXA" && h4.trend === "ALTA") {
+  if (h1.trend !== "NEUTRO") {
     return {
-      bias: "MISTO" as const,
+      bias: h1.trend as "ALTA" | "BAIXA",
       strength: "FRACA",
-      reasoning: "Divergência: Diário em baixa mas 4H em alta - Aguardar alinhamento",
+      reasoning: `H1 mostra ${h1.trend.toLowerCase()}, demais indefinidos`,
     };
   }
 
-  // Sem estrutura clara
   return {
     bias: "NEUTRO" as const,
     strength: "NENHUMA",
-    reasoning: "Sem estrutura clara nos timeframes superiores",
+    reasoning: "Todos TFs neutros",
   };
 }
 
-// Analisa timeframe atual COM contexto dos timeframes superiores
 function analyzeWithContext(
   localAnalysis: BOSCHOCHResult,
   dominantBias: ReturnType<typeof determineDominantBias>,
@@ -382,58 +625,46 @@ function analyzeWithContext(
 ) {
   let interpretation = "";
   let tradingOpportunity = false;
-  const alignedWithHigherTF = localAnalysis.trend === dominantBias.bias;
+  const alignedWithHigherTF = localAnalysis.trend === dominantBias.bias || dominantBias.bias === "NEUTRO";
 
-  // CENÁRIO 1: Viés maior em ALTA
   if (dominantBias.bias === "ALTA") {
     if (localAnalysis.trend === "ALTA") {
-      // Alinhamento total
-      interpretation = "🚀 ALINHAMENTO TOTAL - Continuação de alta esperada";
+      interpretation = "🚀 ALINHAMENTO TOTAL - Continuação de alta";
       tradingOpportunity = true;
     } else if (localAnalysis.trend === "BAIXA") {
-      // Pullback ou reversão?
       if (localAnalysis.lastCHOCH) {
-        interpretation = "⚠️ CHOCH detectado - Possível reversão ou correção profunda. Aguardar confirmação.";
+        interpretation = "⚠️ CHOCH detectado - Possível reversão";
         tradingOpportunity = false;
       } else {
-        interpretation = "✅ PULLBACK para zona de compra - Setup ideal para LONG";
+        interpretation = "✅ PULLBACK para zona de compra - Setup LONG";
         tradingOpportunity = true;
       }
     } else {
-      interpretation = "⏸️ Consolidação - Aguardar definição de direção";
-      tradingOpportunity = false;
+      interpretation = "⏸️ Consolidação em tendência de alta";
+      tradingOpportunity = true;
     }
-  }
-
-  // CENÁRIO 2: Viés maior em BAIXA
-  else if (dominantBias.bias === "BAIXA") {
+  } else if (dominantBias.bias === "BAIXA") {
     if (localAnalysis.trend === "BAIXA") {
-      // Alinhamento total
-      interpretation = "🚀 ALINHAMENTO TOTAL - Continuação de baixa esperada";
+      interpretation = "🚀 ALINHAMENTO TOTAL - Continuação de baixa";
       tradingOpportunity = true;
     } else if (localAnalysis.trend === "ALTA") {
-      // Pullback ou reversão?
       if (localAnalysis.lastCHOCH) {
-        interpretation = "⚠️ CHOCH contra tendência maior - Risco elevado. Aguardar confirmação.";
+        interpretation = "⚠️ CHOCH contra tendência maior";
         tradingOpportunity = false;
       } else {
-        interpretation = "✅ PULLBACK para zona de venda - Setup ideal para SHORT";
+        interpretation = "✅ PULLBACK para zona de venda - Setup SHORT";
         tradingOpportunity = true;
       }
     } else {
-      interpretation = "⏸️ Consolidação - Aguardar definição de direção";
-      tradingOpportunity = false;
+      interpretation = "⏸️ Consolidação em tendência de baixa";
+      tradingOpportunity = true;
     }
-  }
-
-  // CENÁRIO 3: Viés MISTO ou NEUTRO
-  else {
-    if (localAnalysis.lastCHOCH) {
-      interpretation = "⚠️ Estrutura indefinida nos timeframes maiores com CHOCH detectado - Evitar operações";
-    } else {
-      interpretation = "⏸️ Aguardar alinhamento dos timeframes superiores antes de operar";
-    }
+  } else if (dominantBias.bias === "MISTO") {
+    interpretation = "⚠️ Divergência entre TFs - Aguardar definição";
     tradingOpportunity = false;
+  } else {
+    interpretation = "📊 Mercado neutro - Aguardar definição";
+    tradingOpportunity = true; // Permitir operações em range
   }
 
   return {
@@ -442,18 +673,19 @@ function analyzeWithContext(
     alignedWithHigherTF,
     tradingOpportunity,
     reasoning: alignedWithHigherTF
-      ? "Movimento local segue direção dos timeframes superiores"
-      : "Movimento local diverge dos timeframes superiores - Pode ser correção ou reversão",
+      ? "Movimento local segue direção dos TFs superiores"
+      : "Movimento divergente - Confirmar com estrutura",
   };
 }
 
-// Detecta Fair Value Gaps (FVG)
+// ==================== AGENTE FVG ====================
+
 function detectFVG(candles: Candle[]): FVG[] {
   const fvgs: FVG[] = [];
   const currentPrice = candles[candles.length - 1].close;
   
   for (let i = 1; i < candles.length - 1; i++) {
-    // Bullish FVG: high[i-1] < low[i+1]
+    // Bullish FVG
     if (candles[i - 1].high < candles[i + 1].low) {
       const bottom = candles[i - 1].high;
       const top = candles[i + 1].low;
@@ -470,7 +702,7 @@ function detectFVG(candles: Candle[]): FVG[] {
       });
     }
     
-    // Bearish FVG: low[i-1] > high[i+1]
+    // Bearish FVG
     if (candles[i - 1].low > candles[i + 1].high) {
       const bottom = candles[i + 1].high;
       const top = candles[i - 1].low;
@@ -488,101 +720,126 @@ function detectFVG(candles: Candle[]): FVG[] {
     }
   }
   
-  // Retornar apenas os 5 FVGs mais recentes não preenchidos
-  return fvgs
-    .filter(fvg => !fvg.isFilled)
-    .slice(-5);
+  return fvgs.filter(fvg => !fvg.isFilled).slice(-5);
 }
 
-// Detecta Order Blocks
+function calcularEntrada50OB(ob: OrderBlock): number {
+  const corpoAlto = Math.max(ob.open, ob.close);
+  const corpoBaixo = Math.min(ob.open, ob.close);
+  return corpoBaixo + ((corpoAlto - corpoBaixo) / 2);
+}
+
 function detectOrderBlocks(
-  candles: Candle[], 
+  candles: Candle[],
   swings: SwingPoint[],
-  bosIndexes: number[]
+  boss: BOSS | null,
+  fvgs: FVG[],
+  sweep: SweepDetection
 ): OrderBlock[] {
   const orderBlocks: OrderBlock[] = [];
   
-  for (const bosIndex of bosIndexes) {
-    const swing = swings.find(s => s.index === bosIndex);
-    if (!swing) continue;
-    
-    if (swing.type === "high") {
-      // BOS de alta: buscar último candle bearish antes do BOS
-      for (let i = bosIndex - 1; i >= Math.max(0, bosIndex - 10); i--) {
-        if (candles[i].close < candles[i].open) {
-          const avgSize = candles.slice(Math.max(0, i - 20), i)
-            .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i);
-          
-          const candleSize = Math.abs(candles[i].high - candles[i].low);
-          const sizeScore = (candleSize / avgSize) * 50;
-          const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
-          const strength = Math.min(100, sizeScore + volumeScore);
-          
-          // Verificar confirmação: preço testou a zona e reagiu
-          const currentPrice = candles[candles.length - 1].close;
-          const confirmed = currentPrice > candles[i].high;
-          
-          orderBlocks.push({
-            index: i,
-            type: "bullish",
-            top: candles[i].high,
-            bottom: candles[i].low,
-            midpoint: (candles[i].high + candles[i].low) / 2,
-            volume: candles[i].volume,
-            strength,
-            confirmed
-          });
-          break;
-        }
-      }
-    } else {
-      // BOS de baixa: buscar último candle bullish antes do BOS
-      for (let i = bosIndex - 1; i >= Math.max(0, bosIndex - 10); i--) {
-        if (candles[i].close > candles[i].open) {
-          const avgSize = candles.slice(Math.max(0, i - 20), i)
-            .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i);
-          
-          const candleSize = Math.abs(candles[i].high - candles[i].low);
-          const sizeScore = (candleSize / avgSize) * 50;
-          const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
-          const strength = Math.min(100, sizeScore + volumeScore);
-          
-          const currentPrice = candles[candles.length - 1].close;
-          const confirmed = currentPrice < candles[i].low;
-          
-          orderBlocks.push({
-            index: i,
-            type: "bearish",
-            top: candles[i].high,
-            bottom: candles[i].low,
-            midpoint: (candles[i].high + candles[i].low) / 2,
-            volume: candles[i].volume,
-            strength,
-            confirmed
-          });
-          break;
-        }
+  // Com sweep detectado, criar OB mesmo sem BOSS confirmado
+  const hasTrigger = (boss && boss.confirmado) || sweep.detected;
+  
+  if (!hasTrigger) {
+    return orderBlocks;
+  }
+  
+  const lookbackStart = boss?.indice_rompimento || candles.length - 1;
+  
+  // OB Bullish após sweep low
+  if (sweep.type === "sweep_low" || (boss?.tipo === "alta")) {
+    for (let i = lookbackStart - 1; i >= Math.max(0, lookbackStart - 20); i--) {
+      const velaBaixa = candles[i].close < candles[i].open;
+      
+      if (velaBaixa) {
+        const fvgPresente = fvgs.some(
+          fvg => fvg.type === "bullish" && fvg.index >= i && fvg.index <= i + 3
+        );
+        
+        const avgSize = candles.slice(Math.max(0, i - 20), i)
+          .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i || 1);
+        
+        const candleSize = Math.abs(candles[i].high - candles[i].low);
+        const sizeScore = (candleSize / (avgSize || 1)) * 50;
+        const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
+        const sweepBonus = sweep.detected ? 20 : 0;
+        const strength = Math.min(100, sizeScore + volumeScore + sweepBonus);
+        
+        const ob: OrderBlock = {
+          index: i,
+          type: "bullish",
+          top: candles[i].high,
+          bottom: candles[i].low,
+          open: candles[i].open,
+          close: candles[i].close,
+          midpoint: 0,
+          volume: candles[i].volume,
+          strength,
+          confirmed: true,
+          fvg_presente: fvgPresente
+        };
+        
+        ob.midpoint = calcularEntrada50OB(ob);
+        orderBlocks.push(ob);
+        break;
       }
     }
   }
   
-  return orderBlocks
-    .sort((a, b) => b.strength - a.strength)
-    .slice(0, 3);
+  // OB Bearish após sweep high
+  if (sweep.type === "sweep_high" || (boss?.tipo === "baixa")) {
+    for (let i = lookbackStart - 1; i >= Math.max(0, lookbackStart - 20); i--) {
+      const velaAlta = candles[i].close > candles[i].open;
+      
+      if (velaAlta) {
+        const fvgPresente = fvgs.some(
+          fvg => fvg.type === "bearish" && fvg.index >= i && fvg.index <= i + 3
+        );
+        
+        const avgSize = candles.slice(Math.max(0, i - 20), i)
+          .reduce((sum, c) => sum + Math.abs(c.high - c.low), 0) / Math.min(20, i || 1);
+        
+        const candleSize = Math.abs(candles[i].high - candles[i].low);
+        const sizeScore = (candleSize / (avgSize || 1)) * 50;
+        const volumeScore = Math.min(50, (candles[i].volume / 1000000) * 10);
+        const sweepBonus = sweep.detected ? 20 : 0;
+        const strength = Math.min(100, sizeScore + volumeScore + sweepBonus);
+        
+        const ob: OrderBlock = {
+          index: i,
+          type: "bearish",
+          top: candles[i].high,
+          bottom: candles[i].low,
+          open: candles[i].open,
+          close: candles[i].close,
+          midpoint: 0,
+          volume: candles[i].volume,
+          strength,
+          confirmed: true,
+          fvg_presente: fvgPresente
+        };
+        
+        ob.midpoint = calcularEntrada50OB(ob);
+        orderBlocks.push(ob);
+        break;
+      }
+    }
+  }
+  
+  return orderBlocks.sort((a, b) => b.strength - a.strength).slice(0, 3);
 }
 
-// Detecta Zonas de Manipulação
 function detectManipulationZones(
   candles: Candle[],
   swings: SwingPoint[]
 ): ManipulationZone[] {
   const zones: ManipulationZone[] = [];
-  const priceThreshold = 0.002; // 0.2% de tolerância
+  const priceThreshold = 0.002;
   
   const highs = swings.filter(s => s.type === "high");
   const lows = swings.filter(s => s.type === "low");
   
-  // Detectar Equal Highs
   for (let i = 0; i < highs.length - 1; i++) {
     for (let j = i + 1; j < highs.length; j++) {
       const priceDiff = Math.abs(highs[i].price - highs[j].price) / highs[i].price;
@@ -598,7 +855,6 @@ function detectManipulationZones(
     }
   }
   
-  // Detectar Equal Lows
   for (let i = 0; i < lows.length - 1; i++) {
     for (let j = i + 1; j < lows.length; j++) {
       const priceDiff = Math.abs(lows[i].price - lows[j].price) / lows[i].price;
@@ -617,7 +873,8 @@ function detectManipulationZones(
   return zones.slice(-5);
 }
 
-// Calcula TP Dinâmico baseado em swing estrutural
+// ==================== AGENTE DE SINAIS (R:R 3:1) ====================
+
 function calculateDynamicTP(
   entry: number,
   stopLoss: number,
@@ -628,58 +885,48 @@ function calculateDynamicTP(
   const risk = Math.abs(entry - stopLoss);
   
   if (type === "bullish") {
-    // Buscar swing highs acima do entry
     const targetHighs = swings
       .filter(s => s.type === "high" && s.price > entry)
       .sort((a, b) => a.price - b.price);
     
-    // Tentar encontrar swing com RR entre 2.0 e 15.0
     for (const swing of targetHighs) {
-      const targetPrice = swing.price * 0.995; // -0.5% margem
+      const targetPrice = swing.price * 0.995;
       const reward = Math.abs(targetPrice - entry);
       const rr = reward / risk;
       
-      if (rr >= 2.0 && rr <= 15.0) {
+      // TRADE RAIZ: RR mínimo 3:1
+      if (rr >= 3.0 && rr <= 15.0) {
         return {
           takeProfit: targetPrice,
           riskReward: rr,
-          targetSwing: {
-            type: "high",
-            price: swing.price,
-            index: swing.index
-          }
+          targetSwing: { type: "high", price: swing.price, index: swing.index }
         };
       }
     }
   } else {
-    // Buscar swing lows abaixo do entry
     const targetLows = swings
       .filter(s => s.type === "low" && s.price < entry)
       .sort((a, b) => b.price - a.price);
     
     for (const swing of targetLows) {
-      const targetPrice = swing.price * 1.005; // +0.5% margem
+      const targetPrice = swing.price * 1.005;
       const reward = Math.abs(entry - targetPrice);
       const rr = reward / risk;
       
-      if (rr >= 2.0 && rr <= 15.0) {
+      if (rr >= 3.0 && rr <= 15.0) {
         return {
           takeProfit: targetPrice,
           riskReward: rr,
-          targetSwing: {
-            type: "low",
-            price: swing.price,
-            index: swing.index
-          }
+          targetSwing: { type: "low", price: swing.price, index: swing.index }
         };
       }
     }
   }
   
-  // Se não encontrar swing adequado, usar RR conservador 1:3
+  // Fallback: RR conservador 3.5:1
   const conservativeTP = type === "bullish" 
-    ? entry + (risk * 3)
-    : entry - (risk * 3);
+    ? entry + (risk * 3.5)
+    : entry - (risk * 3.5);
   
   const nearestSwing = type === "bullish"
     ? swings.filter(s => s.type === "high" && s.price > entry).sort((a, b) => a.price - b.price)[0]
@@ -687,7 +934,7 @@ function calculateDynamicTP(
   
   return {
     takeProfit: conservativeTP,
-    riskReward: 3.0,
+    riskReward: 3.5,
     targetSwing: nearestSwing ? {
       type: nearestSwing.type,
       price: nearestSwing.price,
@@ -700,7 +947,6 @@ function calculateDynamicTP(
   };
 }
 
-// Sistema de POI (Points of Interest)
 function calculatePOIs(
   candles: Candle[],
   fvgs: FVG[],
@@ -708,78 +954,100 @@ function calculatePOIs(
   premiumDiscount: PremiumDiscountResult,
   dominantBias: ReturnType<typeof determineDominantBias>,
   manipulationZones: ManipulationZone[],
-  swings: SwingPoint[]
+  swings: SwingPoint[],
+  sweep: SweepDetection
 ): POI[] {
   const pois: POI[] = [];
+  const currentPrice = candles[candles.length - 1].close;
   
-  for (const fvg of fvgs) {
-    // Verificar alinhamento com viés dominante
-    if (fvg.type === "bullish" && dominantBias.bias !== "ALTA") continue;
-    if (fvg.type === "bearish" && dominantBias.bias !== "BAIXA") continue;
-    
-    // Verificar posição no range Premium/Discount
-    if (fvg.type === "bullish" && premiumDiscount.status !== "DISCOUNT") continue;
-    if (fvg.type === "bearish" && premiumDiscount.status !== "PREMIUM") continue;
-    
+  for (const ob of orderBlocks) {
     const factors: string[] = [];
     let score = 40;
     
-    factors.push(fvg.type === "bullish" ? "FVG Bullish" : "FVG Bearish");
-    factors.push(premiumDiscount.status === "DISCOUNT" ? "Zona Discount" : "Zona Premium");
-    factors.push(dominantBias.bias === "ALTA" ? "Viés de Alta" : "Viés de Baixa");
+    factors.push(ob.type === "bullish" ? "OB Bullish" : "OB Bearish");
     
-    // Verificar Order Block próximo
-    const nearbyOB = orderBlocks.find(ob => 
-      ob.type === fvg.type && 
-      Math.abs(ob.midpoint - fvg.midpoint) / fvg.midpoint < 0.01
-    );
-    
-    if (nearbyOB) {
-      factors.push(`Order Block Confluente (${Math.round(nearbyOB.strength)}%)`);
-      score += 30;
+    // Bônus por sweep detectado
+    if (sweep.detected) {
+      factors.push(`🎯 SWEEP ${sweep.type === "sweep_low" ? "LOW" : "HIGH"}`);
+      score += 25;
     }
     
-    // Verificar distância de zonas de manipulação
-    const nearManipulation = manipulationZones.some(zone => 
-      Math.abs(zone.price - fvg.midpoint) / fvg.midpoint < 0.005
-    );
+    // Alinhamento com viés
+    if ((ob.type === "bullish" && dominantBias.bias === "ALTA") ||
+        (ob.type === "bearish" && dominantBias.bias === "BAIXA")) {
+      factors.push(`Viés ${dominantBias.bias} alinhado`);
+      score += 15;
+    }
     
-    if (nearManipulation) {
-      score -= 30;
-    } else {
-      factors.push("Longe de Manipulação");
+    // Validar zona
+    const zoneValid = (ob.type === "bullish" && premiumDiscount.status === "DISCOUNT") ||
+                      (ob.type === "bearish" && premiumDiscount.status === "PREMIUM");
+    
+    if (zoneValid) {
+      factors.push(premiumDiscount.status === "DISCOUNT" ? "Zona Discount ✓" : "Zona Premium ✓");
       score += 20;
+    } else {
+      factors.push(`❌ Zona ${premiumDiscount.status}`);
+      // Não bloquear, apenas reduzir score
+      score -= 10;
     }
     
-    // Só criar POI se score >= 70
-    if (score < 70) continue;
+    // FVG presente
+    if (ob.fvg_presente) {
+      factors.push("FVG presente ✓");
+      score += 15;
+    }
     
-    // Calcular entry (50% da zona)
-    const entry = nearbyOB 
-      ? (fvg.midpoint + nearbyOB.midpoint) / 2
-      : fvg.midpoint;
+    // Força do OB
+    factors.push(`Força: ${Math.round(ob.strength)}%`);
+    score += ob.strength * 0.1;
     
-    // Calcular Stop Loss técnico
-    const stopLoss = fvg.type === "bullish"
-      ? Math.min(fvg.bottom, nearbyOB?.bottom || Infinity) - (fvg.size * 0.1)
-      : Math.max(fvg.top, nearbyOB?.top || 0) + (fvg.size * 0.1);
+    // Distância de manipulação
+    const nearManipulation = manipulationZones.some(zone => 
+      Math.abs(zone.price - ob.midpoint) / ob.midpoint < 0.005
+    );
     
-    // Calcular TP Dinâmico
+    if (!nearManipulation) {
+      factors.push("Zona limpa");
+      score += 5;
+    }
+    
+    // Score mínimo 60% para criar POI (reduzido de 70%)
+    if (score < 60) continue;
+    
+    const entry = ob.midpoint;
+    
+    // Stop Loss técnico
+    const swingForSL = ob.type === "bullish" 
+      ? swings.filter(s => s.type === "low").sort((a, b) => b.index - a.index)[0]
+      : swings.filter(s => s.type === "high").sort((a, b) => b.index - a.index)[0];
+    
+    const stopLoss = ob.type === "bullish"
+      ? Math.min(ob.bottom, swingForSL?.price || ob.bottom) * 0.999
+      : Math.max(ob.top, swingForSL?.price || ob.top) * 1.001;
+    
+    // TP Dinâmico com RR mínimo 3:1
     const { takeProfit, riskReward, targetSwing } = calculateDynamicTP(
       entry,
       stopLoss,
-      fvg.type,
+      ob.type,
       swings,
       candles
     );
     
-    factors.push(`RR Dinâmico 1:${riskReward.toFixed(1)}`);
+    // TRADE RAIZ: Se RR < 3, não criar POI
+    if (riskReward < 3.0) {
+      factors.push(`❌ RR ${riskReward.toFixed(1)} < 3:1`);
+      continue;
+    }
+    
+    factors.push(`RR 1:${riskReward.toFixed(1)} ✓`);
     
     pois.push({
-      id: `poi_${Date.now()}_${fvg.index}`,
+      id: `poi_${Date.now()}_${ob.index}`,
       price: entry,
-      type: fvg.type,
-      confluenceScore: score,
+      type: ob.type,
+      confluenceScore: Math.min(score, 100),
       factors,
       entry,
       stopLoss,
@@ -789,13 +1057,362 @@ function calculatePOIs(
     });
   }
   
-  return pois
-    .filter(poi => poi.confluenceScore >= 70)
-    .sort((a, b) => b.confluenceScore - a.confluenceScore)
-    .slice(0, 5);
+  return pois.sort((a, b) => b.riskReward - a.riskReward).slice(0, 3);
 }
 
-// Buscar dados da Binance
+// ==================== CONFLUENCE SCORE SYSTEM ====================
+
+interface ConfluenceResult {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  factors: string[];
+}
+
+function calculateConfluenceScore(
+  sweep: SweepDetection,
+  bosChoch: BOSCHOCHResult,
+  fvgs: FVG[],
+  orderBlocks: OrderBlock[],
+  premiumDiscount: PremiumDiscountResult,
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  manipulationZones: ManipulationZone[],
+  pois: POI[]
+): ConfluenceResult {
+  let score = 0;
+  const maxScore = 10;
+  const factors: string[] = [];
+
+  // ====== TIER 1: ALTA IMPORTÂNCIA (2.0 pontos cada) ======
+  
+  // 1. HTF Alinhado (viés dominante definido e forte)
+  if (dominantBias.bias !== "MISTO" && dominantBias.strength !== "FRACO") {
+    score += 2.0;
+    factors.push(`✓ HTF ${dominantBias.bias} (${dominantBias.strength}) +2.0`);
+  }
+  
+  // 2. Zona correta (Premium/Discount alinhada com viés)
+  const zoneAligned = (
+    (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") ||
+    (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM")
+  );
+  if (zoneAligned) {
+    score += 2.0;
+    factors.push(`✓ Zona ${premiumDiscount.status} alinhada +2.0`);
+  }
+
+  // ====== TIER 2: MÉDIA IMPORTÂNCIA (1.5 pontos cada) ======
+  
+  // 3. FVG presente
+  if (fvgs.length > 0) {
+    score += 1.5;
+    factors.push(`✓ FVG ${fvgs[0].type} presente +1.5`);
+  }
+  
+  // 4. Estrutura confirmada (BOS/CHOCH/BOSS)
+  if (bosChoch.boss?.confirmado || bosChoch.lastBOS || bosChoch.lastCHOCH) {
+    score += 1.5;
+    const structType = bosChoch.boss?.tipo || bosChoch.trend;
+    factors.push(`✓ Estrutura ${structType} +1.5`);
+  }
+
+  // ====== TIER 3: BÔNUS (1.0 ponto cada) ======
+  
+  // 5. Sweep detectado (bônus, não obrigatório!)
+  if (sweep.detected) {
+    score += 1.0;
+    factors.push(`✓ SWEEP ${sweep.type} +1.0`);
+  }
+  
+  // 6. Order Block presente
+  if (orderBlocks.length > 0) {
+    score += 1.0;
+    factors.push(`✓ OB ${orderBlocks[0].type} +1.0`);
+  }
+  
+  // 7. Manipulação identificada
+  if (manipulationZones.length > 0) {
+    score += 0.5;
+    factors.push(`✓ ${manipulationZones.length} zonas manipulação +0.5`);
+  }
+  
+  // 8. Sessão favorável (London ou NY)
+  const session = getTradingSession();
+  if (session === 'LONDON' || session === 'NY') {
+    score += 0.5;
+    factors.push(`✓ Sessão ${session} +0.5`);
+  }
+
+  const percentage = (score / maxScore) * 100;
+  
+  console.log(`[CONFLUENCE] Score: ${score.toFixed(1)}/${maxScore} (${percentage.toFixed(0)}%) - Fatores: ${factors.length}`);
+
+  return { score, maxScore, percentage, factors };
+}
+
+// ==================== 🆕 CAMADA 1: BUILD TRADING CONTEXT ====================
+
+function buildTradingContext(
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  premiumDiscount: PremiumDiscountResult
+): TradingContext {
+  const biasMap = {
+    "ALTA": "BULL",
+    "BAIXA": "BEAR",
+    "NEUTRO": "RANGE",
+    "MISTO": null
+  } as const;
+  
+  const bias = dominantBias.bias !== "MISTO" ? biasMap[dominantBias.bias] : null;
+  const session = getTradingSession() as "OCEANIA" | "ASIA" | "LONDON" | "NY";
+  
+  return {
+    ready: bias !== null && dominantBias.strength !== "FRACO",
+    bias,
+    biasStrength: dominantBias.strength as "FORTE" | "MODERADO" | "FRACO",
+    rangeHigh: premiumDiscount.rangeHigh,
+    rangeLow: premiumDiscount.rangeLow,
+    session,
+  };
+}
+
+// ==================== 🆕 CAMADA 3: DECISION ENGINE ====================
+
+function makeTradeDecision(
+  context: TradingContext,
+  setupsAligned: boolean,
+  confluenceScore: number,
+  patternScore: number,
+  riskReward: number
+): TradeDecision {
+  // 1. Contexto precisa estar pronto
+  if (!context.ready || !context.bias) {
+    return { 
+      execute: false, 
+      reason: "⏸️ Contexto indefinido - aguardar bias", 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 2. Setup precisa estar alinhado com bias
+  if (!setupsAligned) {
+    return { 
+      execute: false, 
+      reason: "⏸️ Setup contra o bias dominante", 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 3. R:R mínimo de 2.5:1
+  if (riskReward < 2.5) {
+    return { 
+      execute: false, 
+      reason: `⏸️ R:R ${riskReward.toFixed(1)} < 2.5`, 
+      confluenceScore, 
+      patternScore, 
+      combinedScore: 0 
+    };
+  }
+  
+  // 4. Calcular score combinado
+  // Confluence (0-10) → 0-50 pontos
+  // Pattern (0-100) → 0-50 pontos
+  const confluenceNormalized = (confluenceScore / 10) * 50;
+  const patternNormalized = (patternScore / 100) * 50;
+  const combinedScore = confluenceNormalized + patternNormalized;
+  
+  // 5. Decisão final baseada em score combinado
+  const MIN_COMBINED_SCORE = 55; // 55% do máximo
+  
+  if (combinedScore >= MIN_COMBINED_SCORE) {
+    return { 
+      execute: true, 
+      reason: `✅ Score ${combinedScore.toFixed(0)}/100 - EXECUTAR`,
+      confluenceScore, 
+      patternScore, 
+      combinedScore 
+    };
+  }
+  
+  // 6. Exceções inteligentes
+  // Alta confluência (8+) compensa pattern baixo
+  if (confluenceScore >= 8.0 && patternScore >= 50) {
+    return { 
+      execute: true, 
+      reason: "✅ Confluência ALTA compensa Pattern",
+      confluenceScore, patternScore, combinedScore 
+    };
+  }
+  
+  // Pattern ELITE (90+) compensa confluência média
+  if (patternScore >= 90 && confluenceScore >= 4.0) {
+    return { 
+      execute: true, 
+      reason: "✅ Padrão ELITE compensa Confluência",
+      confluenceScore, patternScore, combinedScore 
+    };
+  }
+  
+  return { 
+    execute: false, 
+    reason: `⏸️ HOLD - Score ${combinedScore.toFixed(0)}/100 < ${MIN_COMBINED_SCORE}`,
+    confluenceScore, patternScore, combinedScore 
+  };
+}
+
+// ==================== PRE-LIST TRADE RAIZ (CONFLUENCE-BASED) ====================
+
+function calculateTraderRaizChecklist(
+  swings: SwingPoint[],
+  bosChoch: BOSCHOCHResult,
+  premiumDiscount: PremiumDiscountResult,
+  dominantBias: ReturnType<typeof determineDominantBias>,
+  manipulationZones: ManipulationZone[],
+  orderBlocks: OrderBlock[],
+  fvgs: FVG[],
+  pois: POI[],
+  sweep: SweepDetection
+): TraderRaizChecklist {
+  
+  // 🆕 CAMADA 1: BUILD CONTEXT
+  const context = buildTradingContext(dominantBias, premiumDiscount);
+  
+  // 🆕 CALCULAR CONFLUENCE SCORE
+  const confluence = calculateConfluenceScore(
+    sweep, bosChoch, fvgs, orderBlocks, 
+    premiumDiscount, dominantBias, manipulationZones, pois
+  );
+  
+  // ========== CRITÉRIOS INDIVIDUAIS (para exibição na UI) ==========
+  const sweepDetected = sweep.detected;
+  const structureConfirmed = bosChoch.boss?.confirmado || bosChoch.lastBOS !== null || bosChoch.lastCHOCH !== null;
+  const structureType = bosChoch.boss?.confirmado ? "BOS" : bosChoch.lastCHOCH ? "CHOCH" : bosChoch.lastBOS ? "BOS" : null;
+  const structurePrice = bosChoch.boss?.preco_rompido || null;
+  
+  const relevantFvgType = sweep.type === "sweep_low" ? "bullish" : sweep.type === "sweep_high" ? "bearish" : null;
+  const fvgPresent = relevantFvgType 
+    ? fvgs.some(f => f.type === relevantFvgType)
+    : fvgs.length > 0;
+  const fvgType = fvgs[0]?.type || null;
+  
+  let zoneCorrect = false;
+  if (sweep.type === "sweep_low" && premiumDiscount.status === "DISCOUNT") {
+    zoneCorrect = true;
+  } else if (sweep.type === "sweep_high" && premiumDiscount.status === "PREMIUM") {
+    zoneCorrect = true;
+  } else if (!sweep.detected) {
+    zoneCorrect = (
+      (dominantBias.bias === "ALTA" && premiumDiscount.status === "DISCOUNT") ||
+      (dominantBias.bias === "BAIXA" && premiumDiscount.status === "PREMIUM")
+    );
+  }
+  
+  // R:R com threshold ajustado para 2.5:1 (mais realista)
+  const bestPOI = pois[0];
+  const rrValue = bestPOI?.riskReward || 0;
+  const riskRewardValid = rrValue >= 2.5;
+  
+  // 🆕 VERIFICAR SE SETUPS ESTÃO ALINHADOS COM CONTEXTO
+  const setupsAligned = context.ready && (
+    (context.bias === "BULL" && premiumDiscount.status === "DISCOUNT") ||
+    (context.bias === "BEAR" && premiumDiscount.status === "PREMIUM") ||
+    (context.bias === "RANGE" && (premiumDiscount.status === "DISCOUNT" || premiumDiscount.status === "PREMIUM"))
+  );
+  
+  // 🆕 CAMADA 3: DECISION ENGINE (usa PatternScore padrão de 50 se não tiver IA)
+  const patternScoreDefault = 50;
+  const decision = makeTradeDecision(
+    context,
+    setupsAligned,
+    confluence.score,
+    patternScoreDefault,
+    rrValue
+  );
+  
+  // 🆕 CONCLUSÃO AGORA VEM DO DECISION ENGINE
+  let allCriteriaMet = decision.execute;
+  let conclusion: "ENTRADA VÁLIDA" | "AGUARDAR" | "ANULAR";
+  
+  if (decision.execute) {
+    conclusion = "ENTRADA VÁLIDA";
+  } else if (confluence.score >= 4.0 || context.ready) {
+    conclusion = "AGUARDAR";
+  } else {
+    conclusion = "ANULAR";
+  }
+  
+  // 🆕 Critérios count agora baseado no score
+  const criteriaCount = Math.round((confluence.score / confluence.maxScore) * 5);
+  
+  // Campos legacy para compatibilidade
+  const validOB = orderBlocks.find(ob => 
+    (dominantBias.bias === "ALTA" && ob.type === "bullish") ||
+    (dominantBias.bias === "BAIXA" && ob.type === "bearish")
+  );
+  
+  const reasoning = confluence.factors.length > 0 
+    ? confluence.factors.join(" | ") 
+    : "Sem fatores de confluência";
+  
+  console.log(`[CONTEXT] Ready: ${context.ready} | Bias: ${context.bias} | Session: ${context.session}`);
+  console.log(`[DECISION] ${decision.reason} | Combined: ${decision.combinedScore.toFixed(0)}/100`);
+  
+  return {
+    // 🆕 CONTEXTO (Camada 1)
+    context,
+    
+    // 5 critérios originais (para UI)
+    sweepDetected,
+    sweepType: sweep.type,
+    sweepLevel: sweep.level,
+    structureConfirmed,
+    structureType,
+    structurePrice,
+    fvgPresent,
+    fvgType,
+    zoneCorrect,
+    zoneName: premiumDiscount.status,
+    riskRewardValid,
+    riskRewardValue: rrValue,
+    
+    // Legacy
+    swingsMapped: swings.length >= 4,
+    swingsCount: swings.length,
+    trendDefined: bosChoch.trend !== "NEUTRO",
+    trendDirection: bosChoch.trend,
+    structureBroken: structureConfirmed,
+    bossConfirmado: bosChoch.boss?.confirmado || false,
+    zoneAligned: zoneCorrect,
+    manipulationIdentified: manipulationZones.length > 0,
+    manipulationZonesCount: manipulationZones.length,
+    orderBlockLocated: !!validOB,
+    orderBlockRange: validOB ? `$${validOB.bottom.toFixed(2)} - $${validOB.top.toFixed(2)}` : "N/A",
+    orderBlockStrength: validOB?.strength || 0,
+    orderBlockEntry50: validOB?.midpoint || null,
+    entryConfirmed: pois.length > 0,
+    
+    // 🆕 CONFLUENCE SCORE (novos campos)
+    confluenceScore: confluence.score,
+    confluenceMaxScore: confluence.maxScore,
+    confluencePercentage: confluence.percentage,
+    confluenceFactors: confluence.factors,
+    
+    // 🆕 DECISION ENGINE (Camada 3)
+    decision,
+    
+    criteriaCount,
+    allCriteriaMet,
+    conclusion,
+    reasoning,
+  };
+}
+
+// ==================== BINANCE API ====================
+
 async function fetchBinanceKlines(symbol: string, interval: string, limit = 100): Promise<Candle[]> {
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
   
@@ -816,66 +1433,81 @@ async function fetchBinanceKlines(symbol: string, interval: string, limit = 100)
   }));
 }
 
+// ==================== SERVIDOR PRINCIPAL ====================
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { symbol, timeframes, currentTimeframe } = await req.json();
+    const { symbol, timeframes, currentTimeframe, userId } = await req.json();
 
     if (!symbol || !currentTimeframe) {
       throw new Error("Symbol and currentTimeframe are required");
     }
 
-    console.log(`🎯 Análise Top-Down para ${symbol} | TF atual: ${currentTimeframe}`);
+    console.log(`🤖 TRADE RAIZ EVOLUÍDO - ${symbol} | TF: ${currentTimeframe}`);
+    
+    // Inicializar Supabase para consulta de IA
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabase = supabaseUrl && supabaseServiceKey 
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : null;
 
-    // PASSO 1: SEMPRE analisar timeframes superiores PRIMEIRO (1D, 4H, 1H)
+    // PASSO 1: Analisar timeframes superiores
     const higherTimeframes = ["1d", "4h", "1h"];
     const higherTFAnalysis: Record<string, BOSCHOCHResult> = {};
 
-    console.log("📊 Analisando timeframes superiores (1D → 4H → 1H)...");
+    console.log("📊 Top-Down Analysis...");
 
     for (const tf of higherTimeframes) {
       const candles = await fetchBinanceKlines(symbol, tf, 100);
-      const swings = detectSwingPoints(candles);
+      const swings = detectSwingPoints(candles, 3, 3);
       const analysis = detectBOSandCHOCH(candles, swings);
       higherTFAnalysis[tf] = analysis;
       
-      console.log(`  ${tf.toUpperCase()}: ${analysis.trend} | BOS: ${analysis.lastBOS ? '✓' : '✗'} | CHOCH: ${analysis.lastCHOCH ? '✓' : '✗'}`);
+      console.log(`  ${tf.toUpperCase()}: ${analysis.trend} | BOS: ${analysis.boss?.confirmado ? '✓' : '✗'} | Conf: ${analysis.confidence}%`);
     }
 
     // PASSO 2: Determinar VIÉS DOMINANTE
     const dominantBias = determineDominantBias(higherTFAnalysis);
-    console.log(`🎯 VIÉS DOMINANTE: ${dominantBias.bias} (${dominantBias.strength})`);
+    console.log(`🎯 VIÉS: ${dominantBias.bias} (${dominantBias.strength})`);
 
-    // PASSO 3: Analisar timeframe atual COM CONTEXTO
-    console.log(`🔍 Analisando ${currentTimeframe} com contexto superior...`);
+    // PASSO 3: Analisar timeframe atual
+    console.log(`🔍 Analisando ${currentTimeframe}...`);
     const currentTFCandles = await fetchBinanceKlines(symbol, currentTimeframe, 200);
-    const currentTFSwings = detectSwingPoints(currentTFCandles);
+    const currentTFSwings = detectSwingPoints(currentTFCandles, 3, 3);
     const currentTFLocalAnalysis = detectBOSandCHOCH(currentTFCandles, currentTFSwings);
     const premiumDiscount = calculatePremiumDiscount(currentTFCandles, currentTFSwings);
     
-    // NOVAS DETECÇÕES SMC
-    console.log("🔍 Detectando estruturas SMC...");
+    // PASSO 4: SWEEP DETECTION (NOVO!)
+    const sweep = detectSweep(currentTFCandles, currentTFSwings);
+    console.log(`🎯 SWEEP: ${sweep.detected ? `${sweep.type} @ $${sweep.level?.toFixed(2)}` : 'Não detectado'}`);
+    
+    // PASSO 5: Detectar estruturas
     const fvgs = detectFVG(currentTFCandles);
-    console.log(`  📊 FVGs detectados: ${fvgs.length}`);
+    console.log(`  FVGs: ${fvgs.length}`);
     
-    // Extrair índices dos BOS para detectar Order Blocks
-    const bosIndexes = currentTFSwings
-      .filter(s => {
-        if (currentTFLocalAnalysis.trend === "ALTA" && s.type === "high") return true;
-        if (currentTFLocalAnalysis.trend === "BAIXA" && s.type === "low") return true;
-        return false;
-      })
-      .map(s => s.index);
+    const orderBlocks = detectOrderBlocks(
+      currentTFCandles, 
+      currentTFSwings, 
+      currentTFLocalAnalysis.boss,
+      fvgs,
+      sweep
+    );
+    console.log(`  Order Blocks: ${orderBlocks.length}`);
     
-    const orderBlocks = detectOrderBlocks(currentTFCandles, currentTFSwings, bosIndexes);
-    console.log(`  📦 Order Blocks encontrados: ${orderBlocks.length}`);
+    if (orderBlocks.length > 0) {
+      const ob = orderBlocks[0];
+      console.log(`  🎯 OB Entry (50%): $${ob.midpoint.toFixed(2)}`);
+    }
     
     const manipulationZones = detectManipulationZones(currentTFCandles, currentTFSwings);
-    console.log(`  🚫 Zonas de manipulação: ${manipulationZones.length}`);
+    console.log(`  Manipulação: ${manipulationZones.length}`);
     
+    // PASSO 6: Calcular POIs (R:R >= 3:1)
     const pois = calculatePOIs(
       currentTFCandles,
       fvgs,
@@ -883,15 +1515,13 @@ serve(async (req) => {
       premiumDiscount,
       dominantBias,
       manipulationZones,
-      currentTFSwings
+      currentTFSwings,
+      sweep
     );
-    console.log(`  🎯 POIs gerados: ${pois.length}`);
+    console.log(`  POIs (RR >= 3:1): ${pois.length}`);
     
     pois.forEach((poi, i) => {
-      console.log(`  POI #${i+1}: ${poi.type} @ $${poi.price.toFixed(2)}`);
-      console.log(`    - Confluência: ${poi.confluenceScore}%`);
-      console.log(`    - RR: 1:${poi.riskReward.toFixed(2)}`);
-      console.log(`    - TP: $${poi.takeProfit.toFixed(2)} (alvo: ${poi.targetSwing.type} @ $${poi.targetSwing.price.toFixed(2)})`);
+      console.log(`    #${i+1}: ${poi.type} @ $${poi.entry.toFixed(2)} | RR 1:${poi.riskReward.toFixed(1)}`);
     });
     
     const currentTFAnalysis = analyzeWithContext(
@@ -900,58 +1530,91 @@ serve(async (req) => {
       higherTFAnalysis
     );
 
-    // PASSO 4: Analisar TODOS os timeframes para overview (opcional)
+    // PASSO 7: Overview de todos os timeframes
     const allTimeframesAnalysis = await Promise.all(
       timeframes.map(async (tf: string) => {
         const candles = await fetchBinanceKlines(symbol, tf, 100);
-        const swings = detectSwingPoints(candles);
+        const swings = detectSwingPoints(candles, 3, 3);
         const analysis = detectBOSandCHOCH(candles, swings);
-        return {
-          timeframe: tf,
-          ...analysis,
-        };
+        return { timeframe: tf, ...analysis };
       })
     );
+
+    // PASSO 8: PRE-LIST TRADE RAIZ (5 CRITÉRIOS)
+    const checklist = calculateTraderRaizChecklist(
+      currentTFSwings,
+      currentTFLocalAnalysis,
+      premiumDiscount,
+      dominantBias,
+      manipulationZones,
+      orderBlocks,
+      fvgs,
+      pois,
+      sweep
+    );
+    
+    console.log("📋 PRE-LIST TRADE RAIZ (5 critérios):");
+    console.log(`   1. Sweep: ${checklist.sweepDetected ? `✓ ${checklist.sweepType}` : '✗'}`);
+    console.log(`   2. Estrutura: ${checklist.structureConfirmed ? `✓ ${checklist.structureType}` : '✗'}`);
+    console.log(`   3. FVG: ${checklist.fvgPresent ? `✓ ${checklist.fvgType}` : '✗'}`);
+    console.log(`   4. Zona: ${checklist.zoneCorrect ? `✓ ${checklist.zoneName}` : `✗ ${checklist.zoneName}`}`);
+    console.log(`   5. R:R: ${checklist.riskRewardValid ? `✓` : '✗'} 1:${checklist.riskRewardValue.toFixed(1)} (min 3:1)`);
+    console.log(`   📊 CONCLUSÃO: ${checklist.conclusion} (${checklist.criteriaCount}/5)`);
+
+    // ==================== IA EVOLUTIVA: CONSULTAR APRENDIZADO ====================
+    let iaLearning: IALearningData | null = null;
+    
+    if (supabase && userId) {
+      iaLearning = await consultarAprendizadoIA(
+        supabase,
+        userId,
+        sweep.type || 'none',
+        checklist.structureType || 'none',
+        checklist.fvgType || 'none',
+        premiumDiscount.status
+      );
+    }
 
     const result = {
       symbol,
       timestamp: new Date().toISOString(),
       
-      // CONTEXTO SUPERIOR (sempre presente)
       higherTimeframes: {
         "1d": higherTFAnalysis["1d"],
         "4h": higherTFAnalysis["4h"],
         "1h": higherTFAnalysis["1h"],
       },
       
-      // VIÉS DOMINANTE
       dominantBias,
       
-      // ANÁLISE DO TIMEFRAME ATUAL
       currentTimeframe: {
         timeframe: currentTimeframe,
         ...currentTFAnalysis,
         premiumDiscount,
-        
-        // ESTRUTURAS SMC
         fvgs,
         orderBlocks,
         manipulationZones,
         pois,
+        sweep,
       },
       
-      // OVERVIEW DE TODOS OS TIMEFRAMES
+      checklist,
       allTimeframes: allTimeframesAnalysis,
+      
+      // NOVO: Dados de aprendizado da IA
+      iaLearning,
     };
 
-    console.log("✅ Análise Top-Down concluída");
-    console.log(`   Viés: ${dominantBias.bias} | TF Atual: ${currentTFAnalysis.trend} | Setup: ${currentTFAnalysis.tradingOpportunity ? '✓' : '✗'}`);
+    console.log("✅ Análise concluída");
+    if (iaLearning) {
+      console.log(`🧠 IA: ${iaLearning.confianca} (${iaLearning.taxaAcerto.toFixed(1)}%)`);
+    }
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("❌ Erro na análise Top-Down:", error);
+    console.error("❌ Erro:", error);
     return new Response(
       JSON.stringify({ error: error.message || "Erro desconhecido" }),
       {

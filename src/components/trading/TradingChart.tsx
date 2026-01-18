@@ -65,11 +65,11 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
 
   // Criar/atualizar widget quando script estiver carregado ou símbolo/intervalo mudarem
   useEffect(() => {
-    console.log("🔄 useEffect de criação do widget disparado", {
-      scriptLoaded,
+    console.log("🔄 useEffect de criação do widget disparado", { 
+      scriptLoaded, 
       hasContainer: !!containerRef.current,
       symbol,
-      interval
+      interval 
     });
 
     if (!scriptLoaded || !containerRef.current) {
@@ -117,7 +117,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
         symbol: `BINANCE:${symbol}`,
         interval: tvInterval
       });
-
+      
       widgetRef.current = new (window as any).TradingView.widget({
         container_id: "tradingview_chart",
         autosize: true,
@@ -131,7 +131,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
         enable_publishing: false,
         hide_side_toolbar: false,
         allow_symbol_change: false,
-        hide_top_toolbar: true,
+        hide_top_toolbar: false,
         hide_legend: false,
         studies: ["Volume@tv-basicstudies"],
         support_host: "https://www.tradingview.com",
@@ -176,7 +176,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
 
   return (
     <div className="relative w-full h-full bg-background">
-      <TradingChartOverlay
+      <TradingChartOverlay 
         smcData={smcData || null}
       />
       {isLoading && !hasError && (
@@ -193,7 +193,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
           </div>
         </div>
       )}
-
+      
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
           <div className="text-center">
@@ -203,7 +203,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
             <p className="text-muted-foreground text-xs mb-4">
               Verifique o console para mais detalhes
             </p>
-            <button
+            <button 
               onClick={() => window.location.reload()}
               className="px-4 py-2 text-sm text-primary-foreground bg-primary rounded hover:bg-primary/90 transition-colors"
             >
@@ -212,7 +212,7 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
           </div>
         </div>
       )}
-
+      
       <div
         id="tradingview_chart"
         ref={containerRef}

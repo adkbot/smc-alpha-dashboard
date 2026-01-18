@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Square, AlertCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2, Zap, ShieldAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,6 +15,10 @@ interface BotStatus {
   activePositions: number;
   todayTrades: number;
   paperMode: boolean;
+  binanceConnected: boolean;
+  autoTradingEnabled: boolean;
+  futuresOk: boolean;
+  spotOk: boolean;
 }
 
 export const BotControlPanel = () => {
@@ -24,19 +30,137 @@ export const BotControlPanel = () => {
     activePositions: 0,
     todayTrades: 0,
     paperMode: true,
+    binanceConnected: false,
+    autoTradingEnabled: false,
+    futuresOk: false,
+    spotOk: false,
   });
   const [loading, setLoading] = useState(false);
+  const [autoToggleLoading, setAutoToggleLoading] = useState(false);
+  
+  // Ref para evitar loop de proteção
+  const protectionApplied = useRef(false);
+
+  const ensureUserSettings = async () => {
+    if (!user) return null;
+
+    const { data: existingSettings } = await supabase
+      .from("user_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existingSettings) return existingSettings;
+
+    // Criar com UPSERT se não existe
+    const { data: newSettings, error } = await supabase
+      .from("user_settings")
+      .upsert({
+        user_id: user.id,
+        balance: 10000,
+        paper_mode: true,
+        risk_per_trade: 0.06,
+        max_positions: 3,
+        leverage: 20,
+        bot_status: 'stopped',
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao criar user_settings:", error);
+      return null;
+    }
+
+    return newSettings;
+  };
+
+  // Função auxiliar para aplicar proteção com retry
+  const applyProtection = async (updates: Record<string, any>, message: string) => {
+    if (!user) return false;
+    
+    let retries = 3;
+    while (retries > 0) {
+      const { error } = await supabase
+        .from("user_settings")
+        .update(updates)
+        .eq("user_id", user.id);
+      
+      if (!error) {
+        console.log("✅ Proteção aplicada:", updates);
+        return true;
+      }
+      
+      console.error(`Erro ao aplicar proteção (tentativa ${4 - retries}/3):`, error);
+      retries--;
+      await new Promise(r => setTimeout(r, 500)); // Wait 500ms before retry
+    }
+    
+    console.error("❌ Falha ao aplicar proteção após 3 tentativas");
+    return false;
+  };
 
   const fetchBotStatus = async () => {
     if (!user) return;
 
     try {
-      // Buscar configurações
-      const { data: settings } = await supabase
-        .from("user_settings")
-        .select("bot_status, paper_mode")
+      // Garantir que settings existe
+      const settings = await ensureUserSettings();
+
+      // Buscar status das credenciais Binance incluindo futures_ok
+      const { data: credentials } = await supabase
+        .from("user_api_credentials")
+        .select("test_status, futures_ok, spot_ok")
         .eq("user_id", user.id)
+        .eq("broker_type", "binance")
         .maybeSingle();
+
+      const binanceConnected = credentials?.test_status === "success";
+      const futuresOk = credentials?.futures_ok === true;
+      const spotOk = credentials?.spot_ok === true;
+      const isRealMode = !settings?.paper_mode;
+      const currentBotStatus = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
+      const autoTradingEnabled = settings?.auto_trading_enabled ?? false;
+
+      // Reset proteção se condições mudaram (modo PAPER ou Binance conectou)
+      if (!isRealMode || binanceConnected) {
+        protectionApplied.current = false;
+      }
+
+      // 🛑 AUTO-PROTEÇÃO: Se condições exigem e proteção ainda não aplicada
+      // Em modo REAL, precisa ter FUTURES OK para operar
+      const needsProtection = isRealMode && (!binanceConnected || !futuresOk) && 
+        (currentBotStatus === "running" || autoTradingEnabled);
+      
+      if (needsProtection && !protectionApplied.current) {
+        protectionApplied.current = true; // Marcar antes para evitar loop
+        
+        console.log("🛑 Auto-proteção: Parando bot e desabilitando Auto Trading");
+        
+        const success = await applyProtection(
+          { bot_status: "stopped", auto_trading_enabled: false },
+          "proteção modo REAL sem Binance"
+        );
+        
+        // Proteção silenciosa - sem toast chato
+        if (success) {
+          console.log("⚠️ Proteção ativada silenciosamente");
+        }
+        
+        // Forçar estado local independente do resultado do banco
+        setBotStatus({
+          status: "stopped",
+          lastAction: new Date().toLocaleTimeString(),
+          activePositions: 0,
+          todayTrades: 0,
+          paperMode: settings?.paper_mode ?? true,
+          binanceConnected: false,
+          autoTradingEnabled: false,
+          futuresOk: false,
+          spotOk: false,
+        });
+        return;
+      }
 
       // Buscar posições ativas
       const { count: activeCount } = await supabase
@@ -44,22 +168,26 @@ export const BotControlPanel = () => {
         .select("id", { count: "exact" })
         .eq("user_id", user.id);
 
-      // Buscar trades de hoje
+      // Buscar trades de hoje (apenas executados com resultado WIN ou LOSS)
       const today = new Date().toISOString().split("T")[0];
       const { count: tradesCount } = await supabase
         .from("operations")
         .select("id", { count: "exact" })
         .eq("user_id", user.id)
-        .gte("entry_time", today);
-
-      const status = settings?.bot_status as "stopped" | "running" | "paused" || "stopped";
+        .gte("entry_time", `${today}T00:00:00`)
+        .lte("entry_time", `${today}T23:59:59`)
+        .in("result", ["WIN", "LOSS"]); // Apenas operações realmente executadas
       
       setBotStatus({
-        status,
+        status: currentBotStatus,
         lastAction: new Date().toLocaleTimeString(),
         activePositions: activeCount || 0,
         todayTrades: tradesCount || 0,
         paperMode: settings?.paper_mode ?? true,
+        binanceConnected,
+        autoTradingEnabled,
+        futuresOk,
+        spotOk,
       });
     } catch (error) {
       console.error("Erro ao buscar status do bot:", error);
@@ -77,21 +205,68 @@ export const BotControlPanel = () => {
     setLoading(true);
 
     try {
-      // Verificar se credenciais da Binance estão configuradas
-      const { data: credentials } = await supabase
-        .from("user_api_credentials")
-        .select("test_status")
-        .eq("user_id", user.id)
-        .eq("broker_type", "binance")
-        .single();
+      // Garantir que settings existe
+      const settings = await ensureUserSettings();
+      if (!settings) {
+        throw new Error("Erro ao acessar configurações do usuário");
+      }
 
-      if (!credentials && !botStatus.paperMode) {
-        toast({
-          title: "Credenciais não configuradas",
-          description: "Configure suas credenciais da Binance em Configurações",
-          variant: "destructive",
-        });
-        return;
+      // Verificar modo e credenciais
+      if (!settings.paper_mode) {
+        // Modo REAL - verificar credenciais Binance
+        const { data: credentials } = await supabase
+          .from("user_api_credentials")
+          .select("test_status")
+          .eq("user_id", user.id)
+          .eq("broker_type", "binance")
+          .maybeSingle();
+
+        if (!credentials) {
+          toast({
+            title: "Credenciais não configuradas",
+            description: "Configure suas credenciais da Binance em Configurações antes de usar o modo REAL.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        if (credentials.test_status !== "success") {
+          toast({
+            title: "Conexão não validada",
+            description: "Teste sua conexão com a Binance em Configurações antes de iniciar o bot em modo REAL.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // 🔒 NOVA VALIDAÇÃO: Verificar permissão FUTURES específica
+        const { data: fullCredentials } = await supabase
+          .from("user_api_credentials")
+          .select("futures_ok")
+          .eq("user_id", user.id)
+          .eq("broker_type", "binance")
+          .maybeSingle();
+
+        if (!fullCredentials?.futures_ok) {
+          toast({
+            title: "❌ Permissão FUTURES necessária",
+            description: "Sua API Key não tem permissão para operar FUTURES. Habilite 'Enable Futures' na Binance API Management.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Sincronizar saldo real antes de iniciar
+        try {
+          await supabase.functions.invoke("sync-real-balance", {
+            body: { broker_type: "binance" },
+          });
+        } catch (syncError) {
+          console.error("Erro ao sincronizar saldo:", syncError);
+        }
       }
 
       // Atualizar status
@@ -104,7 +279,7 @@ export const BotControlPanel = () => {
 
       toast({
         title: "🟢 Bot Iniciado",
-        description: `Modo: ${botStatus.paperMode ? "PAPER" : "REAL"}`,
+        description: `Modo: ${settings.paper_mode ? "PAPER (Simulado)" : "REAL (Binance)"}`,
       });
 
       fetchBotStatus();
@@ -131,18 +306,10 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
-      toast({
-        title: "🟡 Bot Pausado",
-        description: "Não entrará em novas posições",
-      });
-
+      console.log("🟡 Bot pausado");
       fetchBotStatus();
     } catch (error: any) {
-      toast({
-        title: "Erro ao pausar bot",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Erro ao pausar bot:", error.message);
     } finally {
       setLoading(false);
     }
@@ -160,22 +327,51 @@ export const BotControlPanel = () => {
 
       if (error) throw error;
 
-      toast({
-        title: "🔴 Bot Parado",
-        description: "Sistema desativado",
-      });
-
+      console.log("🔴 Bot parado");
       fetchBotStatus();
     } catch (error: any) {
-      toast({
-        title: "Erro ao parar bot",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error("Erro ao parar bot:", error.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const toggleAutoTrading = async (enabled: boolean) => {
+    if (!user) return;
+    
+    // 🔒 Bloquear ativação se modo REAL sem Binance conectada
+    if (enabled && !botStatus.paperMode && !botStatus.binanceConnected) {
+      console.warn("⚠️ Tentativa de ativar Auto Trading sem Binance conectada");
+      toast({
+        title: "⚠️ Não é possível ativar Auto Trading",
+        description: "Configure e valide suas credenciais Binance primeiro.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setAutoToggleLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from("user_settings")
+        .update({ auto_trading_enabled: enabled })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      console.log(`⚡ Auto Trading ${enabled ? 'ativado' : 'desativado'}`);
+      fetchBotStatus();
+    } catch (error: any) {
+      console.error("Erro ao alterar Auto Trading:", error.message);
+    } finally {
+      setAutoToggleLoading(false);
+    }
+  };
+
+  // Verifica se modo REAL está instável (sem conexão ou sem FUTURES)
+  const isRealModeUnstable = !botStatus.paperMode && (!botStatus.binanceConnected || !botStatus.futuresOk);
+  const isFuturesMissing = !botStatus.paperMode && botStatus.binanceConnected && !botStatus.futuresOk;
 
   return (
     <Card className="p-4 m-4">
@@ -198,23 +394,107 @@ export const BotControlPanel = () => {
         </Badge>
       </div>
 
+      {/* Badge de estado instável */}
+      {isRealModeUnstable && (
+        <div className="mb-3">
+          <Badge variant="destructive" className="w-full justify-center py-1">
+            <ShieldAlert className="w-3 h-3 mr-1" />
+            {isFuturesMissing 
+              ? "⚠️ FUTURES Desativado - Habilite nas permissões da API Binance"
+              : "⚠️ Modo REAL Instável - Binance Desconectada"}
+          </Badge>
+        </div>
+      )}
+
+      {/* Aviso modo REAL */}
       {!botStatus.paperMode && (
-        <div className="mb-4 p-2 bg-destructive/10 border border-destructive rounded-md flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
-          <p className="text-xs text-destructive">
-            <strong>Modo REAL ativo!</strong> Operações serão executadas com dinheiro real na corretora.
-          </p>
+        <div className={`mb-4 p-2 rounded-md flex flex-col gap-2 ${
+          botStatus.binanceConnected 
+            ? 'bg-success/10 border border-success/30' 
+            : 'bg-destructive/10 border border-destructive/30'
+        }`}>
+          {botStatus.binanceConnected ? (
+            <div className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-success">
+                <strong>Modo REAL ativo!</strong> Conectado à Binance. Operações serão executadas com dinheiro real.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-destructive font-bold">
+                    Modo REAL sem conexão!
+                  </p>
+                  <p className="text-xs text-destructive/80">
+                    Configure e teste suas credenciais Binance. Bot e Auto Trading bloqueados.
+                  </p>
+                </div>
+              </div>
+              {/* Botões de diagnóstico */}
+              <div className="flex gap-2 mt-1">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                  onClick={async () => {
+                    toast({
+                      title: "🔄 Retestando conexão...",
+                      description: "Abrindo configurações para retestar Binance.",
+                    });
+                    // Disparar evento para abrir settings
+                    window.dispatchEvent(new CustomEvent('open-settings', { detail: 'binance' }));
+                  }}
+                >
+                  🔄 Retestar Binance
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  className="h-7 text-xs"
+                  onClick={async () => {
+                    if (!user) return;
+                    const { error } = await supabase
+                      .from("user_settings")
+                      .update({ paper_mode: true })
+                      .eq("user_id", user.id);
+                    
+                    if (!error) {
+                      toast({
+                        title: "📄 Modo PAPER Ativado",
+                        description: "Sistema alternado para modo simulado.",
+                      });
+                      fetchBotStatus();
+                    }
+                  }}
+                >
+                  📄 Mudar para PAPER
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       <div className="grid grid-cols-3 gap-2 mb-4">
         <Button
           onClick={startBot}
-          disabled={botStatus.status === "running" || loading}
+          disabled={
+            botStatus.status === "running" || 
+            loading || 
+            isRealModeUnstable
+          }
           size="sm"
           className="bg-success hover:bg-success/90"
+          title={isRealModeUnstable ? "Configure Binance primeiro" : "Iniciar bot"}
         >
-          <Play className="w-4 h-4 mr-1" />
+          {loading ? (
+            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+          ) : (
+            <Play className="w-4 h-4 mr-1" />
+          )}
           INICIAR
         </Button>
 
@@ -239,12 +519,74 @@ export const BotControlPanel = () => {
         </Button>
       </div>
 
+      {/* AUTO TRADING TOGGLE */}
+      <div className={`p-3 rounded-lg border-2 mb-4 ${
+        botStatus.autoTradingEnabled 
+          ? 'bg-accent/10 border-accent' 
+          : isRealModeUnstable
+          ? 'bg-destructive/5 border-destructive/30'
+          : 'bg-muted border-border'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className={`w-4 h-4 ${
+              botStatus.autoTradingEnabled 
+                ? 'text-accent' 
+                : isRealModeUnstable 
+                ? 'text-destructive/50'
+                : 'text-muted-foreground'
+            }`} />
+            <Label htmlFor="auto-trading" className="text-sm font-bold cursor-pointer">
+              Auto Trading
+            </Label>
+            {isRealModeUnstable && (
+              <Badge variant="outline" className="text-[9px] border-destructive/30 text-destructive">
+                BLOQUEADO
+              </Badge>
+            )}
+          </div>
+          <Switch
+            id="auto-trading"
+            checked={isRealModeUnstable ? false : botStatus.autoTradingEnabled}
+            onCheckedChange={toggleAutoTrading}
+            disabled={autoToggleLoading || isRealModeUnstable}
+          />
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          {isRealModeUnstable 
+            ? "⚠️ Configure credenciais Binance para habilitar Auto Trading"
+            : botStatus.autoTradingEnabled 
+            ? "⚡ Executa ordens automaticamente quando Pre-List Trader Raiz é aprovada"
+            : "🔒 Bot monitora mas não executa ordens automaticamente"}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Modo:</span>
-          <Badge variant="outline" className="ml-2">
-            {botStatus.paperMode ? "📄 PAPER" : "💰 REAL"}
+          <Badge 
+            variant="outline" 
+            className={`ml-2 ${!botStatus.paperMode ? (botStatus.binanceConnected ? 'border-success text-success' : 'border-destructive text-destructive') : ''}`}
+          >
+            {botStatus.paperMode ? "📄 PAPER" : (botStatus.binanceConnected ? "💰 REAL" : "⚠️ REAL")}
           </Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Binance:</span>
+          <div className="flex gap-1 items-center">
+            <Badge 
+              variant="outline" 
+              className={`ml-2 text-[9px] px-1 ${botStatus.spotOk ? 'border-success/50 text-success' : 'border-muted text-muted-foreground'}`}
+            >
+              SPOT {botStatus.spotOk ? "✓" : "✗"}
+            </Badge>
+            <Badge 
+              variant="outline" 
+              className={`text-[9px] px-1 ${botStatus.futuresOk ? 'border-success text-success' : 'border-destructive text-destructive font-bold'}`}
+            >
+              FUTURES {botStatus.futuresOk ? "✓" : "✗"}
+            </Badge>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Posições Abertas:</span>
@@ -254,7 +596,7 @@ export const BotControlPanel = () => {
           <span className="text-muted-foreground">Trades Hoje:</span>
           <span className="ml-2 font-bold text-foreground">{botStatus.todayTrades}</span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between col-span-2">
           <span className="text-muted-foreground">Última Atualização:</span>
           <span className="ml-2 text-muted-foreground text-[10px]">
             {botStatus.lastAction}

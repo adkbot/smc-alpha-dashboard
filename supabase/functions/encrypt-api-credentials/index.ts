@@ -22,7 +22,7 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      return new Response(JSON.stringify({ error: 'Não autorizado' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -31,16 +31,42 @@ serve(async (req) => {
     const { broker_type, api_key, api_secret, broker_name } = await req.json();
 
     if (!broker_type || !api_key || !api_secret) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+      return new Response(JSON.stringify({ error: 'Campos obrigatórios ausentes' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // IMPORTANTE: Limpar espaços em branco das API Keys
+    const cleanApiKey = api_key.trim();
+    const cleanApiSecret = api_secret.trim();
+
+    // Validar formato básico (API Key da Binance geralmente tem 64 caracteres)
+    if (broker_type === 'binance') {
+      if (cleanApiKey.length < 20) {
+        return new Response(JSON.stringify({ 
+          error: 'API Key muito curta. Verifique se copiou a chave completa.' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (cleanApiSecret.length < 20) {
+        return new Response(JSON.stringify({ 
+          error: 'API Secret muito curto. Verifique se copiou o secret completo.' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    console.log(`[ENCRYPT] User ${user.id}, broker: ${broker_type}, key length: ${cleanApiKey.length}, secret length: ${cleanApiSecret.length}`);
+
     // Simple encryption using master key from Supabase Secrets
     const masterKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const encryptedKey = btoa(`${masterKey}:${api_key}`);
-    const encryptedSecret = btoa(`${masterKey}:${api_secret}`);
+    const encryptedKey = btoa(`${masterKey}:${cleanApiKey}`);
+    const encryptedSecret = btoa(`${masterKey}:${cleanApiSecret}`);
 
     const { error: upsertError } = await supabaseClient
       .from('user_api_credentials')
@@ -51,25 +77,28 @@ serve(async (req) => {
         encrypted_api_secret: encryptedSecret,
         broker_name: broker_name || null,
         test_status: 'pending',
+        updated_at: new Date().toISOString(),
       }, {
         onConflict: 'user_id,broker_type',
       });
 
     if (upsertError) {
-      console.error('Database error:', upsertError);
+      console.error('[ENCRYPT] Database error:', upsertError);
       throw upsertError;
     }
+
+    console.log(`[ENCRYPT] Credenciais salvas com sucesso para user ${user.id}`);
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: 'API credentials encrypted and saved successfully',
+        message: 'Credenciais criptografadas e salvas com sucesso',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in encrypt-api-credentials:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[ENCRYPT] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { 
