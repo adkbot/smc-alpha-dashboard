@@ -87,13 +87,11 @@ export const TradingChart = ({ symbol, interval, smcData }: TradingChartProps) =
     const uniqueId = `tv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     widgetIdRef.current = uniqueId;
 
-    // Limpar e criar container
+    // Criar container para o widget de forma segura
     const parent = containerRef.current;
     if (parent) {
-      // Remover filhos de forma segura
-      while (parent.firstChild) {
-        parent.removeChild(parent.firstChild);
-      }
+      // Limpar todo o conteúdo de uma vez (mais seguro que removeChild)
+      parent.innerHTML = '';
 
       // Criar div para o widget
       const widgetDiv = document.createElement('div');
