@@ -94,7 +94,7 @@ const Auth = () => {
     setLoading(true);
 
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: 'https://smc-alpha-dashboard-main.vercel.app/reset-password',
     });
 
     if (error) {
