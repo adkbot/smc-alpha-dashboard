@@ -8,6 +8,7 @@ import { Play, Pause, Square, AlertCircle, CheckCircle, Loader2, Zap, ShieldAler
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useControlledPolling } from "@/hooks/useControlledPolling";
 
 interface BotStatus {
   status: "stopped" | "running" | "paused";
@@ -37,7 +38,7 @@ export const BotControlPanel = () => {
   });
   const [loading, setLoading] = useState(false);
   const [autoToggleLoading, setAutoToggleLoading] = useState(false);
-  
+
   // Ref para evitar loop de proteção
   const protectionApplied = useRef(false);
 
@@ -78,24 +79,24 @@ export const BotControlPanel = () => {
   // Função auxiliar para aplicar proteção com retry
   const applyProtection = async (updates: Record<string, any>, message: string) => {
     if (!user) return false;
-    
+
     let retries = 3;
     while (retries > 0) {
       const { error } = await supabase
         .from("user_settings")
         .update(updates)
         .eq("user_id", user.id);
-      
+
       if (!error) {
         console.log("✅ Proteção aplicada:", updates);
         return true;
       }
-      
+
       console.error(`Erro ao aplicar proteção (tentativa ${4 - retries}/3):`, error);
       retries--;
       await new Promise(r => setTimeout(r, 500)); // Wait 500ms before retry
     }
-    
+
     console.error("❌ Falha ao aplicar proteção após 3 tentativas");
     return false;
   };
@@ -129,24 +130,24 @@ export const BotControlPanel = () => {
 
       // 🛑 AUTO-PROTEÇÃO: Se condições exigem e proteção ainda não aplicada
       // Em modo REAL, precisa ter FUTURES OK para operar
-      const needsProtection = isRealMode && (!binanceConnected || !futuresOk) && 
+      const needsProtection = isRealMode && (!binanceConnected || !futuresOk) &&
         (currentBotStatus === "running" || autoTradingEnabled);
-      
+
       if (needsProtection && !protectionApplied.current) {
         protectionApplied.current = true; // Marcar antes para evitar loop
-        
+
         console.log("🛑 Auto-proteção: Parando bot e desabilitando Auto Trading");
-        
+
         const success = await applyProtection(
           { bot_status: "stopped", auto_trading_enabled: false },
           "proteção modo REAL sem Binance"
         );
-        
+
         // Proteção silenciosa - sem toast chato
         if (success) {
           console.log("⚠️ Proteção ativada silenciosamente");
         }
-        
+
         // Forçar estado local independente do resultado do banco
         setBotStatus({
           status: "stopped",
@@ -177,7 +178,7 @@ export const BotControlPanel = () => {
         .gte("entry_time", `${today}T00:00:00`)
         .lte("entry_time", `${today}T23:59:59`)
         .in("result", ["WIN", "LOSS"]); // Apenas operações realmente executadas
-      
+
       setBotStatus({
         status: currentBotStatus,
         lastAction: new Date().toLocaleTimeString(),
@@ -194,11 +195,8 @@ export const BotControlPanel = () => {
     }
   };
 
-  useEffect(() => {
-    fetchBotStatus();
-    const interval = setInterval(fetchBotStatus, 5000);
-    return () => clearInterval(interval);
-  }, [user]);
+  // Usar polling controlado para eliminar flickering completo (30s)
+  useControlledPolling(fetchBotStatus, 30000);
 
   const startBot = async () => {
     if (!user) return;
@@ -338,7 +336,7 @@ export const BotControlPanel = () => {
 
   const toggleAutoTrading = async (enabled: boolean) => {
     if (!user) return;
-    
+
     // 🔒 Bloquear ativação se modo REAL sem Binance conectada
     if (enabled && !botStatus.paperMode && !botStatus.binanceConnected) {
       console.warn("⚠️ Tentativa de ativar Auto Trading sem Binance conectada");
@@ -349,7 +347,7 @@ export const BotControlPanel = () => {
       });
       return;
     }
-    
+
     setAutoToggleLoading(true);
 
     try {
@@ -382,15 +380,15 @@ export const BotControlPanel = () => {
             botStatus.status === "running"
               ? "default"
               : botStatus.status === "paused"
-              ? "secondary"
-              : "outline"
+                ? "secondary"
+                : "outline"
           }
         >
           {botStatus.status === "running"
             ? "🟢 ATIVO"
             : botStatus.status === "paused"
-            ? "🟡 PAUSADO"
-            : "🔴 PARADO"}
+              ? "🟡 PAUSADO"
+              : "🔴 PARADO"}
         </Badge>
       </div>
 
@@ -399,7 +397,7 @@ export const BotControlPanel = () => {
         <div className="mb-3">
           <Badge variant="destructive" className="w-full justify-center py-1">
             <ShieldAlert className="w-3 h-3 mr-1" />
-            {isFuturesMissing 
+            {isFuturesMissing
               ? "⚠️ FUTURES Desativado - Habilite nas permissões da API Binance"
               : "⚠️ Modo REAL Instável - Binance Desconectada"}
           </Badge>
@@ -408,11 +406,10 @@ export const BotControlPanel = () => {
 
       {/* Aviso modo REAL */}
       {!botStatus.paperMode && (
-        <div className={`mb-4 p-2 rounded-md flex flex-col gap-2 ${
-          botStatus.binanceConnected 
-            ? 'bg-success/10 border border-success/30' 
+        <div className={`mb-4 p-2 rounded-md flex flex-col gap-2 ${botStatus.binanceConnected
+            ? 'bg-success/10 border border-success/30'
             : 'bg-destructive/10 border border-destructive/30'
-        }`}>
+          }`}>
           {botStatus.binanceConnected ? (
             <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
@@ -435,9 +432,9 @@ export const BotControlPanel = () => {
               </div>
               {/* Botões de diagnóstico */}
               <div className="flex gap-2 mt-1">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
+                <Button
+                  size="sm"
+                  variant="outline"
                   className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
                   onClick={async () => {
                     toast({
@@ -450,9 +447,9 @@ export const BotControlPanel = () => {
                 >
                   🔄 Retestar Binance
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="secondary" 
+                <Button
+                  size="sm"
+                  variant="secondary"
                   className="h-7 text-xs"
                   onClick={async () => {
                     if (!user) return;
@@ -460,7 +457,7 @@ export const BotControlPanel = () => {
                       .from("user_settings")
                       .update({ paper_mode: true })
                       .eq("user_id", user.id);
-                    
+
                     if (!error) {
                       toast({
                         title: "📄 Modo PAPER Ativado",
@@ -482,8 +479,8 @@ export const BotControlPanel = () => {
         <Button
           onClick={startBot}
           disabled={
-            botStatus.status === "running" || 
-            loading || 
+            botStatus.status === "running" ||
+            loading ||
             isRealModeUnstable
           }
           size="sm"
@@ -520,22 +517,20 @@ export const BotControlPanel = () => {
       </div>
 
       {/* AUTO TRADING TOGGLE */}
-      <div className={`p-3 rounded-lg border-2 mb-4 ${
-        botStatus.autoTradingEnabled 
-          ? 'bg-accent/10 border-accent' 
+      <div className={`p-3 rounded-lg border-2 mb-4 ${botStatus.autoTradingEnabled
+          ? 'bg-accent/10 border-accent'
           : isRealModeUnstable
-          ? 'bg-destructive/5 border-destructive/30'
-          : 'bg-muted border-border'
-      }`}>
+            ? 'bg-destructive/5 border-destructive/30'
+            : 'bg-muted border-border'
+        }`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Zap className={`w-4 h-4 ${
-              botStatus.autoTradingEnabled 
-                ? 'text-accent' 
-                : isRealModeUnstable 
-                ? 'text-destructive/50'
-                : 'text-muted-foreground'
-            }`} />
+            <Zap className={`w-4 h-4 ${botStatus.autoTradingEnabled
+                ? 'text-accent'
+                : isRealModeUnstable
+                  ? 'text-destructive/50'
+                  : 'text-muted-foreground'
+              }`} />
             <Label htmlFor="auto-trading" className="text-sm font-bold cursor-pointer">
               Auto Trading
             </Label>
@@ -553,19 +548,19 @@ export const BotControlPanel = () => {
           />
         </div>
         <p className="text-[10px] text-muted-foreground mt-1">
-          {isRealModeUnstable 
+          {isRealModeUnstable
             ? "⚠️ Configure credenciais Binance para habilitar Auto Trading"
-            : botStatus.autoTradingEnabled 
-            ? "⚡ Executa ordens automaticamente quando Pre-List Trader Raiz é aprovada"
-            : "🔒 Bot monitora mas não executa ordens automaticamente"}
+            : botStatus.autoTradingEnabled
+              ? "⚡ Executa ordens automaticamente quando Pre-List Trader Raiz é aprovada"
+              : "🔒 Bot monitora mas não executa ordens automaticamente"}
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Modo:</span>
-          <Badge 
-            variant="outline" 
+          <Badge
+            variant="outline"
             className={`ml-2 ${!botStatus.paperMode ? (botStatus.binanceConnected ? 'border-success text-success' : 'border-destructive text-destructive') : ''}`}
           >
             {botStatus.paperMode ? "📄 PAPER" : (botStatus.binanceConnected ? "💰 REAL" : "⚠️ REAL")}
@@ -574,14 +569,14 @@ export const BotControlPanel = () => {
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Binance:</span>
           <div className="flex gap-1 items-center">
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className={`ml-2 text-[9px] px-1 ${botStatus.spotOk ? 'border-success/50 text-success' : 'border-muted text-muted-foreground'}`}
             >
               SPOT {botStatus.spotOk ? "✓" : "✗"}
             </Badge>
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className={`text-[9px] px-1 ${botStatus.futuresOk ? 'border-success text-success' : 'border-destructive text-destructive font-bold'}`}
             >
               FUTURES {botStatus.futuresOk ? "✓" : "✗"}
