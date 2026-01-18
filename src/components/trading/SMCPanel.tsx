@@ -28,7 +28,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
   const [trend] = useState<"ALTA" | "BAIXA" | "NEUTRO">("ALTA");
 
   const mtfLoading = !mtfData;
-  
+
   // Real-time price state
   const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
   const [realtimePercentage, setRealtimePercentage] = useState<number | null>(null);
@@ -37,22 +37,22 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
   // Generate signals based on POIs - SINCRONIZADO com checklist Trader Raiz
   const signals = useMemo(() => {
     if (!mtfData?.currentTimeframe?.pois || !realtimePrice) return [];
-    
+
     // Ordenar POIs por R:R descendente para priorizar os melhores
     const sortedPois = [...mtfData.currentTimeframe.pois].sort((a, b) => b.riskReward - a.riskReward);
-    
+
     return sortedPois
       .filter(poi => {
         // Confluência mínima 60% (sincronizado com checklist)
         if (poi.confluenceScore < 60) return false;
-        
+
         // Preço próximo do POI (até 2% de distância)
         const distance = Math.abs(realtimePrice - poi.price) / poi.price;
         if (distance > 0.02) return false;
-        
+
         // RR mínimo de 3:1 (Trade Raiz)
         if (poi.riskReward < 3.0) return false;
-        
+
         return true;
       })
       .map(poi => ({
@@ -68,7 +68,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         targetSwing: poi.targetSwing
       }));
   }, [mtfData, realtimePrice]);
-  
+
   // Real-time price state
 
   // Debug logs
@@ -90,8 +90,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         if (mtfData?.currentTimeframe?.premiumDiscount) {
           const { rangeHigh, rangeLow } = mtfData.currentTimeframe.premiumDiscount;
           const rangeSize = rangeHigh - rangeLow;
-          const percentage = rangeSize > 0 
-            ? ((currentPrice - rangeLow) / rangeSize) * 100 
+          const percentage = rangeSize > 0
+            ? ((currentPrice - rangeLow) / rangeSize) * 100
             : 50;
           setRealtimePercentage(Math.max(0, Math.min(100, percentage)));
 
@@ -139,8 +139,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             Gemini
           </Badge>
         </div>
-        
-        <Button 
+
+        <Button
           className="w-full bg-accent hover:bg-accent/90 text-accent-foreground mb-3"
           size="sm"
         >
@@ -159,18 +159,17 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
 
         {/* IA Learning Indicator */}
         {mtfData?.iaLearning && (
-          <Card className={`p-2 mt-2 border text-xs ${
-            mtfData.iaLearning.confianca === 'ALTA' ? 'bg-success/10 border-success/30' :
-            mtfData.iaLearning.confianca === 'BAIXA' ? 'bg-destructive/10 border-destructive/30' :
-            'bg-muted/30 border-muted'
-          }`}>
+          <Card className={`p-2 mt-2 border text-xs ${mtfData.iaLearning.confianca === 'ALTA' ? 'bg-success/10 border-success/30' :
+              mtfData.iaLearning.confianca === 'BAIXA' ? 'bg-destructive/10 border-destructive/30' :
+                'bg-muted/30 border-muted'
+            }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-semibold">🧠 IA:</span>
                 <Badge variant={
                   mtfData.iaLearning.confianca === 'ALTA' ? 'default' :
-                  mtfData.iaLearning.confianca === 'BAIXA' ? 'destructive' :
-                  'secondary'
+                    mtfData.iaLearning.confianca === 'BAIXA' ? 'destructive' :
+                      'secondary'
                 } className="text-[9px] px-1 py-0">
                   {mtfData.iaLearning.taxaAcerto.toFixed(0)}%
                 </Badge>
@@ -197,7 +196,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             <h3 className="text-xs font-bold text-primary mb-2 uppercase flex items-center gap-1">
               🎯 Contexto Superior (Top-Down)
             </h3>
-            
+
             {/* Grid dos 3 Timeframes Superiores */}
             <div className="grid grid-cols-3 gap-2 mb-2">
               <Card className="p-2 bg-secondary/50">
@@ -209,11 +208,11 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   {getTrendIcon(mtfData.higherTimeframes["1d"].trend)}
                 </div>
                 <div className="text-[9px] text-muted-foreground mt-1">
-                  BOS: {mtfData.higherTimeframes["1d"].lastBOS ? "✓" : "✗"} | 
+                  BOS: {mtfData.higherTimeframes["1d"].lastBOS ? "✓" : "✗"} |
                   CHOCH: {mtfData.higherTimeframes["1d"].lastCHOCH ? "✓" : "✗"}
                 </div>
               </Card>
-              
+
               <Card className="p-2 bg-secondary/50">
                 <div className="text-[9px] text-muted-foreground mb-1">4 HORAS</div>
                 <div className="flex items-center justify-between">
@@ -223,11 +222,11 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   {getTrendIcon(mtfData.higherTimeframes["4h"].trend)}
                 </div>
                 <div className="text-[9px] text-muted-foreground mt-1">
-                  BOS: {mtfData.higherTimeframes["4h"].lastBOS ? "✓" : "✗"} | 
+                  BOS: {mtfData.higherTimeframes["4h"].lastBOS ? "✓" : "✗"} |
                   CHOCH: {mtfData.higherTimeframes["4h"].lastCHOCH ? "✓" : "✗"}
                 </div>
               </Card>
-              
+
               <Card className="p-2 bg-secondary/50">
                 <div className="text-[9px] text-muted-foreground mb-1">1 HORA</div>
                 <div className="flex items-center justify-between">
@@ -237,33 +236,32 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   {getTrendIcon(mtfData.higherTimeframes["1h"].trend)}
                 </div>
                 <div className="text-[9px] text-muted-foreground mt-1">
-                  BOS: {mtfData.higherTimeframes["1h"].lastBOS ? "✓" : "✗"} | 
+                  BOS: {mtfData.higherTimeframes["1h"].lastBOS ? "✓" : "✗"} |
                   CHOCH: {mtfData.higherTimeframes["1h"].lastCHOCH ? "✓" : "✗"}
                 </div>
               </Card>
             </div>
-            
+
             {/* VIÉS DOMINANTE */}
-            <Card className={`p-2 border-2 ${
-              mtfData.dominantBias.bias === "ALTA" 
-                ? "bg-success/10 border-success" 
-                : mtfData.dominantBias.bias === "BAIXA"
-                ? "bg-destructive/10 border-destructive"
-                : "bg-secondary border-border"
-            }`}>
+            <Card className={`p-2 border-2 ${mtfData?.dominantBias?.bias === "ALTA"
+                ? "bg-success/10 border-success"
+                : mtfData?.dominantBias?.bias === "BAIXA"
+                  ? "bg-destructive/10 border-destructive"
+                  : "bg-secondary border-border"
+              }`}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold">VIÉS DOMINANTE:</span>
                 <div className="flex items-center gap-1">
-                  <Badge className={`text-sm font-bold ${getTrendColorClass(mtfData.dominantBias.bias)}`}>
-                    {mtfData.dominantBias.bias}
+                  <Badge className={`text-sm font-bold ${getTrendColorClass(mtfData?.dominantBias?.bias || "NEUTRO")}`}>
+                    {mtfData?.dominantBias?.bias || "—"}
                   </Badge>
                   <Badge variant="outline" className="text-[9px]">
-                    {mtfData.dominantBias.strength}
+                    {mtfData?.dominantBias?.strength || "—"}
                   </Badge>
                 </div>
               </div>
               <p className="text-[9px] text-muted-foreground">
-                {mtfData.dominantBias.reasoning}
+                {mtfData?.dominantBias?.reasoning || "Calculando..."}
               </p>
             </Card>
           </div>
@@ -271,8 +269,8 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           {/* ANÁLISE DO TIMEFRAME ATUAL */}
           <div className="p-3 border-b border-border">
             <div className="p-3 border-2 rounded-lg bg-card/50" style={{
-              borderColor: mtfData.currentTimeframe.alignedWithHigherTF 
-                ? "hsl(var(--success))" 
+              borderColor: mtfData.currentTimeframe.alignedWithHigherTF
+                ? "hsl(var(--success))"
                 : "hsl(var(--warning))"
             }}>
               <div className="flex items-center justify-between mb-2">
@@ -283,7 +281,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   {mtfData.currentTimeframe.alignedWithHigherTF ? "✓ ALINHADO" : "⚠ DIVERGENTE"}
                 </Badge>
               </div>
-              
+
               <Card className="p-2 mb-2 bg-secondary/50">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs">Tendência:</span>
@@ -296,24 +294,24 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-[9px] mt-2">
                   <div>
-                    <span className="text-muted-foreground">BOS:</span> 
+                    <span className="text-muted-foreground">BOS:</span>
                     <span className="ml-1 font-bold">{mtfData.currentTimeframe.lastBOS ? "✓" : "✗"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">CHOCH:</span> 
+                    <span className="text-muted-foreground">CHOCH:</span>
                     <span className="ml-1 font-bold">{mtfData.currentTimeframe.lastCHOCH ? "✓" : "✗"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Conf:</span> 
+                    <span className="text-muted-foreground">Conf:</span>
                     <span className="ml-1 font-bold">{mtfData.currentTimeframe.confidence}%</span>
                   </div>
                 </div>
               </Card>
-              
+
               <div className="p-2 bg-muted/50 rounded text-[10px] mb-2">
                 {mtfData.currentTimeframe.interpretation}
               </div>
-              
+
               {mtfData.currentTimeframe.tradingOpportunity && (
                 <Badge className="w-full justify-center bg-accent text-accent-foreground">
                   🎯 SETUP IDENTIFICADO
@@ -329,22 +327,21 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               {mtfData.allTimeframes.map((tf) => (
                 <div
                   key={tf.timeframe}
-                  className={`p-1.5 rounded border text-center ${
-                    tf.timeframe.toLowerCase() === interval.toLowerCase() 
-                      ? 'border-primary bg-primary/20' 
+                  className={`p-1.5 rounded border text-center ${tf.timeframe.toLowerCase() === interval.toLowerCase()
+                      ? 'border-primary bg-primary/20'
                       : 'border-border bg-secondary/50'
-                  }`}
+                    }`}
                 >
                   <div className="text-[9px] text-muted-foreground font-medium mb-0.5">
                     {tf.timeframe.toUpperCase()}
                   </div>
                   <Badge
                     variant={
-                      tf.trend === "ALTA" 
-                        ? "default" 
+                      tf.trend === "ALTA"
+                        ? "default"
                         : tf.trend === "BAIXA"
-                        ? "destructive"
-                        : "secondary"
+                          ? "destructive"
+                          : "secondary"
                     }
                     className="text-[8px] px-1 py-0 h-4"
                   >
@@ -363,69 +360,65 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             Estrutura de Mercado
           </h3>
-          <Badge variant="outline" className={`${
-            mtfData?.currentTimeframe?.trend === "ALTA" 
-              ? "text-success border-success" 
+          <Badge variant="outline" className={`${mtfData?.currentTimeframe?.trend === "ALTA"
+              ? "text-success border-success"
               : mtfData?.currentTimeframe?.trend === "BAIXA"
-              ? "text-destructive border-destructive"
-              : "text-muted-foreground border-muted"
-          }`}>
+                ? "text-destructive border-destructive"
+                : "text-muted-foreground border-muted"
+            }`}>
             {mtfData?.currentTimeframe?.trend || "NEUTRO"}
           </Badge>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-2">
-          <Card className={`p-3 border-2 ${
-            mtfData?.currentTimeframe?.lastBOS 
-              ? "bg-success/10 border-success" 
+          <Card className={`p-3 border-2 ${mtfData?.currentTimeframe?.lastBOS
+              ? "bg-success/10 border-success"
               : "bg-secondary border-border"
-          }`}>
+            }`}>
             <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
               {mtfData?.currentTimeframe?.lastBOS && <span className="text-success">✓</span>}
               Último BOS
             </div>
             <div className="text-sm font-bold text-foreground font-mono">
-              {mtfData?.currentTimeframe?.lastBOS 
+              {mtfData?.currentTimeframe?.lastBOS
                 ? new Date(mtfData.currentTimeframe.lastBOS).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                 : "—"}
             </div>
             <div className="text-[9px] text-muted-foreground mt-1">
-              {mtfData?.currentTimeframe?.bosCount 
-                ? `${mtfData.currentTimeframe.bosCount} quebra(s)` 
+              {mtfData?.currentTimeframe?.bosCount
+                ? `${mtfData.currentTimeframe.bosCount} quebra(s)`
                 : "Nenhuma quebra"}
             </div>
           </Card>
-          
-          <Card className={`p-3 border-2 ${
-            mtfData?.currentTimeframe?.lastCHOCH 
-              ? "bg-warning/10 border-warning" 
+
+          <Card className={`p-3 border-2 ${mtfData?.currentTimeframe?.lastCHOCH
+              ? "bg-warning/10 border-warning"
               : "bg-secondary border-border"
-          }`}>
+            }`}>
             <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
               {mtfData?.currentTimeframe?.lastCHOCH && <span className="text-warning">⚡</span>}
               Último CHOCH
             </div>
             <div className="text-sm font-bold text-foreground font-mono">
-              {mtfData?.currentTimeframe?.lastCHOCH 
+              {mtfData?.currentTimeframe?.lastCHOCH
                 ? new Date(mtfData.currentTimeframe.lastCHOCH).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                 : "—"}
             </div>
             <div className="text-[9px] text-muted-foreground mt-1">
-              {mtfData?.currentTimeframe?.chochCount 
-                ? `${mtfData.currentTimeframe.chochCount} mudança(s)` 
+              {mtfData?.currentTimeframe?.chochCount
+                ? `${mtfData.currentTimeframe.chochCount} mudança(s)`
                 : "Sem mudança"}
             </div>
           </Card>
         </div>
-        
+
         {/* Indicador de estrutura do checklist */}
         {mtfData?.checklist && (
-          <div className={`mt-2 p-2 rounded text-[10px] ${
-            mtfData.checklist.structureBroken 
-              ? "bg-success/20 text-success" 
+          <div className={`mt-2 p-2 rounded text-[10px] ${mtfData.checklist.structureBroken
+              ? "bg-success/20 text-success"
               : "bg-muted text-muted-foreground"
-          }`}>
-            {mtfData.checklist.structureBroken 
+            }`}>
+            {mtfData.checklist.structureBroken
               ? `✓ ${mtfData.checklist.structureType} confirmado em $${mtfData.checklist.structurePrice?.toFixed(2) || '—'}`
               : "⏳ Aguardando quebra de estrutura"}
           </div>
@@ -442,9 +435,9 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
           .filter(p => p.type === "bearish")
           .sort((a, b) => b.riskReward - a.riskReward)[0];
         const displayPOIs = [bestBullishPOI, bestBearishPOI].filter(Boolean);
-        
+
         if (displayPOIs.length === 0) return null;
-        
+
         return (
           <div className="p-4 border-b border-border">
             <h3 className="text-xs font-bold mb-3 flex items-center gap-2">
@@ -453,51 +446,50 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 {displayPOIs.length > 1 ? "LONG + SHORT" : displayPOIs[0]?.type === "bullish" ? "LONG" : "SHORT"}
               </Badge>
             </h3>
-            
+
             <div className="space-y-2">
               {displayPOIs.map((poi) => (
-              <Card key={poi.id} className={`p-3 ${
-                poi.type === "bullish" 
-                  ? "border-success bg-success/10" 
-                  : "border-destructive bg-destructive/10"
-              }`}>
-                <div className="flex justify-between items-center mb-2">
-                  <Badge variant={poi.type === "bullish" ? "default" : "destructive"}>
-                    {poi.type === "bullish" ? "🟢 LONG" : "🔴 SHORT"}
-                  </Badge>
-                  <Badge variant="outline" className="bg-background text-[9px]">
-                    {poi.confluenceScore}% ⭐
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                  <div>
-                    <span className="text-muted-foreground text-[9px]">ENTRADA</span>
-                    <div className="font-mono font-bold">${poi.entry.toFixed(2)}</div>
+                <Card key={poi.id} className={`p-3 ${poi.type === "bullish"
+                    ? "border-success bg-success/10"
+                    : "border-destructive bg-destructive/10"
+                  }`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <Badge variant={poi.type === "bullish" ? "default" : "destructive"}>
+                      {poi.type === "bullish" ? "🟢 LONG" : "🔴 SHORT"}
+                    </Badge>
+                    <Badge variant="outline" className="bg-background text-[9px]">
+                      {poi.confluenceScore}% ⭐
+                    </Badge>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[9px]">STOP LOSS</span>
-                    <div className="font-mono text-destructive">${poi.stopLoss.toFixed(2)}</div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                    <div>
+                      <span className="text-muted-foreground text-[9px]">ENTRADA</span>
+                      <div className="font-mono font-bold">${poi.entry.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[9px]">STOP LOSS</span>
+                      <div className="font-mono text-destructive">${poi.stopLoss.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[9px]">TAKE PROFIT</span>
+                      <div className="font-mono text-success">${poi.takeProfit.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[9px]">RISCO/RETORNO</span>
+                      <div className="font-mono font-bold text-accent">1:{poi.riskReward.toFixed(2)}</div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[9px]">TAKE PROFIT</span>
-                    <div className="font-mono text-success">${poi.takeProfit.toFixed(2)}</div>
+
+                  <div className="text-[9px] text-muted-foreground mb-2 p-1 bg-background/50 rounded">
+                    🎯 Target: {poi.targetSwing.type === "high" ? "Topo" : "Fundo"} em ${poi.targetSwing.price.toFixed(2)}
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[9px]">RISCO/RETORNO</span>
-                    <div className="font-mono font-bold text-accent">1:{poi.riskReward.toFixed(2)}</div>
+
+                  <div className="text-[9px] text-muted-foreground border-t pt-2">
+                    {poi.factors.join(" • ")}
                   </div>
-                </div>
-                
-                <div className="text-[9px] text-muted-foreground mb-2 p-1 bg-background/50 rounded">
-                  🎯 Target: {poi.targetSwing.type === "high" ? "Topo" : "Fundo"} em ${poi.targetSwing.price.toFixed(2)}
-                </div>
-                
-                <div className="text-[9px] text-muted-foreground border-t pt-2">
-                  {poi.factors.join(" • ")}
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
             </div>
           </div>
         );
@@ -507,26 +499,25 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
       {mtfData?.currentTimeframe?.fvgs && mtfData.currentTimeframe.fvgs.length > 0 && (
         <div className="p-4 border-b border-border">
           <h3 className="text-xs font-bold mb-3">📊 Fair Value Gaps</h3>
-          
+
           <div className="space-y-2">
             {mtfData.currentTimeframe.fvgs.slice(0, 3).map((fvg, i) => (
-              <Card key={i} className={`p-2 ${
-                fvg.type === "bullish" 
-                  ? "bg-success/5 border-success/20" 
+              <Card key={i} className={`p-2 ${fvg.type === "bullish"
+                  ? "bg-success/5 border-success/20"
                   : "bg-destructive/5 border-destructive/20"
-              }`}>
+                }`}>
                 <div className="flex justify-between items-center">
                   <Badge variant={fvg.type === "bullish" ? "default" : "destructive"}>
                     {fvg.type === "bullish" ? "▲ Bullish FVG" : "▼ Bearish FVG"}
                   </Badge>
                   <span className="text-xs font-mono">${fvg.midpoint.toFixed(2)}</span>
                 </div>
-                
+
                 <div className="text-[9px] text-muted-foreground mt-1 flex justify-between">
                   <span>Top: ${fvg.top.toFixed(2)}</span>
                   <span>Bot: ${fvg.bottom.toFixed(2)}</span>
                 </div>
-                
+
                 {!fvg.isFilled && (
                   <Badge variant="outline" className="mt-1 text-[8px]">
                     🔓 Não Preenchido
@@ -542,14 +533,13 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
       {mtfData?.currentTimeframe?.orderBlocks && mtfData.currentTimeframe.orderBlocks.length > 0 && (
         <div className="p-4 border-b border-border">
           <h3 className="text-xs font-bold mb-3">📦 Order Blocks</h3>
-          
+
           <div className="space-y-2">
             {mtfData.currentTimeframe.orderBlocks.map((ob, i) => (
-              <Card key={i} className={`p-2 ${
-                ob.type === "bullish"
+              <Card key={i} className={`p-2 ${ob.type === "bullish"
                   ? "bg-success/5 border-success/20"
                   : "bg-destructive/5 border-destructive/20"
-              }`}>
+                }`}>
                 <div className="flex justify-between items-center mb-1">
                   <Badge variant={ob.type === "bullish" ? "default" : "destructive"}>
                     {ob.type === "bullish" ? "▲ Bullish OB" : "▼ Bearish OB"}
@@ -563,7 +553,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="text-[9px] text-muted-foreground">
                   <div>Entry Zone: ${ob.midpoint.toFixed(2)}</div>
                   <div className="flex justify-between mt-1">
@@ -584,7 +574,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             <Activity className="h-4 w-4" />
             Zonas de Manipulação Detectadas
           </h3>
-          
+
           <div className="space-y-2">
             {mtfData.currentTimeframe.manipulationZones.map((zone, i) => (
               <Card key={i} className="p-2 bg-destructive/10 border-destructive/30">
@@ -594,14 +584,14 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   </Badge>
                   <span className="text-xs font-mono">${zone.price.toFixed(2)}</span>
                 </div>
-                
+
                 <div className="text-[9px] text-muted-foreground mt-1">
                   🚫 Evitar operações {zone.danger >= 80 ? "CRÍTICO" : "nesta área"}
                 </div>
               </Card>
             ))}
           </div>
-          
+
           <p className="text-[9px] text-destructive/80 mt-2">
             ⚠️ Estas zonas atraem liquidez e podem causar reversões bruscas
           </p>
@@ -613,40 +603,39 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
         <div className="p-4 border-b border-border">
           <Skeleton className="h-32 w-full" />
         </div>
-      ) : mtfData?.currentTimeframe?.premiumDiscount && 
-         typeof mtfData.currentTimeframe.premiumDiscount === 'object' &&
-         mtfData.currentTimeframe.premiumDiscount.currentPrice > 0 ? (
+      ) : mtfData?.currentTimeframe?.premiumDiscount &&
+        typeof mtfData.currentTimeframe.premiumDiscount === 'object' &&
+        mtfData.currentTimeframe.premiumDiscount.currentPrice > 0 ? (
         <div className="p-4 border-b border-border">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
             Range & Filtro
           </h3>
-          
-          <Card className={`p-3 border-2 ${
-            (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" 
-              ? "bg-destructive/10 border-destructive" 
+
+          <Card className={`p-3 border-2 ${(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM"
+              ? "bg-destructive/10 border-destructive"
               : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
-              ? "bg-success/10 border-success"
-              : "bg-secondary border-border"
-          }`}>
+                ? "bg-success/10 border-success"
+                : "bg-secondary border-border"
+            }`}>
             <div className="flex justify-between items-center mb-3">
               <span className="text-xs text-muted-foreground">Posição no Range</span>
               <Badge className={
-                (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" 
-                  ? "bg-destructive" 
+                (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM"
+                  ? "bg-destructive"
                   : (realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT"
-                  ? "bg-success"
-                  : "bg-secondary"
+                    ? "bg-success"
+                    : "bg-secondary"
               }>
-                {realtimeStatus === "PREMIUM" 
-                  ? "Zona de Venda (Premium)" 
+                {realtimeStatus === "PREMIUM"
+                  ? "Zona de Venda (Premium)"
                   : realtimeStatus === "DISCOUNT"
-                  ? "Zona de Compra (Discount)"
-                  : realtimeStatus === "EQUILIBRIUM"
-                  ? "Equilíbrio"
-                  : mtfData.currentTimeframe.premiumDiscount.statusDescription}
+                    ? "Zona de Compra (Discount)"
+                    : realtimeStatus === "EQUILIBRIUM"
+                      ? "Equilíbrio"
+                      : mtfData.currentTimeframe.premiumDiscount.statusDescription}
               </Badge>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
               <div>
                 <span className="text-muted-foreground">High:</span>
@@ -667,14 +656,14 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </div>
               </div>
             </div>
-            
+
             <div className="relative">
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
                 <div className="w-1/2 bg-success/40 border-r-2 border-foreground"></div>
                 <div className="w-1/2 bg-destructive/40"></div>
               </div>
-              
-              <div 
+
+              <div
                 className="w-1.5 h-5 bg-primary border-2 border-foreground absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500 rounded-sm shadow-lg"
                 style={{ left: `${realtimePercentage !== null ? realtimePercentage : mtfData.currentTimeframe.premiumDiscount.rangePercentage}%` }}
               >
@@ -683,51 +672,50 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
               <span>← DISCOUNT (Compra)</span>
               <span>PREMIUM (Venda) →</span>
             </div>
           </Card>
-          
-          <Card className={`p-2 mt-2 ${
-            ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && mtfData.dominantBias.bias === "ALTA") ||
-            ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && mtfData.dominantBias.bias === "BAIXA")
+
+          <Card className={`p-2 mt-2 ${((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && mtfData.dominantBias.bias === "ALTA") ||
+              ((realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && mtfData.dominantBias.bias === "BAIXA")
               ? "bg-warning/20 border-warning"
               : "bg-muted/50"
-          }`}>
+            }`}>
             <p className="text-[10px] text-muted-foreground">
-              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && 
-               mtfData.dominantBias.bias === "BAIXA" && (
-                "✅ Preço em zona premium + viés de baixa = Zona ideal para SHORT"
-              )}
-              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && 
-               mtfData.dominantBias.bias === "ALTA" && (
-                "✅ Preço em zona discount + viés de alta = Zona ideal para LONG"
-              )}
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" &&
+                mtfData.dominantBias.bias === "BAIXA" && (
+                  "✅ Preço em zona premium + viés de baixa = Zona ideal para SHORT"
+                )}
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" &&
+                mtfData.dominantBias.bias === "ALTA" && (
+                  "✅ Preço em zona discount + viés de alta = Zona ideal para LONG"
+                )}
               {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "EQUILIBRIUM" && (
                 "⏸️ Preço em equilíbrio - Aguardar movimento para zona premium ou discount"
               )}
-              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" && 
-               mtfData.dominantBias.bias === "ALTA" && (
-                <>
-                  <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
-                  <br />
-                  <span>Viés ALTA + Preço em PREMIUM = NÃO COMPRAR (não comprar caro)</span>
-                  <br />
-                  <span className="text-muted-foreground/70">Aguardar pullback para zona DISCOUNT antes de entrada LONG</span>
-                </>
-              )}
-              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" && 
-               mtfData.dominantBias.bias === "BAIXA" && (
-                <>
-                  <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
-                  <br />
-                  <span>Viés BAIXA + Preço em DISCOUNT = NÃO VENDER (não vender barato)</span>
-                  <br />
-                  <span className="text-muted-foreground/70">Aguardar rejeição em zona PREMIUM antes de entrada SHORT</span>
-                </>
-              )}
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "PREMIUM" &&
+                mtfData.dominantBias.bias === "ALTA" && (
+                  <>
+                    <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
+                    <br />
+                    <span>Viés ALTA + Preço em PREMIUM = NÃO COMPRAR (não comprar caro)</span>
+                    <br />
+                    <span className="text-muted-foreground/70">Aguardar pullback para zona DISCOUNT antes de entrada LONG</span>
+                  </>
+                )}
+              {(realtimeStatus || mtfData.currentTimeframe.premiumDiscount.status) === "DISCOUNT" &&
+                mtfData.dominantBias.bias === "BAIXA" && (
+                  <>
+                    <span className="text-warning font-bold">⚠️ VIÉS x ZONA DESALINHADOS</span>
+                    <br />
+                    <span>Viés BAIXA + Preço em DISCOUNT = NÃO VENDER (não vender barato)</span>
+                    <br />
+                    <span className="text-muted-foreground/70">Aguardar rejeição em zona PREMIUM antes de entrada SHORT</span>
+                  </>
+                )}
             </p>
           </Card>
         </div>
@@ -745,11 +733,10 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
       {mtfData?.checklist && (
         <div className="border-b-2 border-primary">
           {/* 🔷 CAMADA 1: CONTEXTO */}
-          <div className={`p-3 border-b ${
-            mtfData.checklist.context?.ready 
-              ? "bg-primary/10" 
+          <div className={`p-3 border-b ${mtfData.checklist.context?.ready
+              ? "bg-primary/10"
               : "bg-muted/50"
-          }`}>
+            }`}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
                 🔷 CAMADA 1: CONTEXTO
@@ -758,49 +745,47 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 {mtfData.checklist.context?.ready ? "PRONTO" : "AGUARDANDO"}
               </Badge>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-2">
               <Card className="p-2 bg-card/50">
                 <div className="text-[9px] text-muted-foreground">BIAS</div>
-                <div className={`text-sm font-bold ${
-                  mtfData.checklist.context?.bias === "BULL" ? "text-success" :
-                  mtfData.checklist.context?.bias === "BEAR" ? "text-destructive" :
-                  "text-muted-foreground"
-                }`}>
+                <div className={`text-sm font-bold ${mtfData.checklist.context?.bias === "BULL" ? "text-success" :
+                    mtfData.checklist.context?.bias === "BEAR" ? "text-destructive" :
+                      "text-muted-foreground"
+                  }`}>
                   {mtfData.checklist.context?.bias || "—"}
                 </div>
               </Card>
-              
+
               <Card className="p-2 bg-card/50">
                 <div className="text-[9px] text-muted-foreground">FORÇA</div>
                 <div className="text-sm font-bold">
                   {mtfData.checklist.context?.biasStrength || "—"}
                 </div>
               </Card>
-              
+
               <Card className="p-2 bg-card/50">
                 <div className="text-[9px] text-muted-foreground">SESSÃO</div>
-                <div className={`text-sm font-bold ${
-                  mtfData.checklist.context?.session === "LONDON" || mtfData.checklist.context?.session === "NY" 
-                    ? "text-accent" 
+                <div className={`text-sm font-bold ${mtfData.checklist.context?.session === "LONDON" || mtfData.checklist.context?.session === "NY"
+                    ? "text-accent"
                     : "text-muted-foreground"
-                }`}>
+                  }`}>
                   {mtfData.checklist.context?.session || "—"}
                 </div>
               </Card>
             </div>
-            
+
             <div className="text-[9px] text-muted-foreground mt-2 text-center">
               Range: ${mtfData.checklist.context?.rangeLow?.toFixed(2) || "—"} - ${mtfData.checklist.context?.rangeHigh?.toFixed(2) || "—"}
             </div>
           </div>
-          
+
           {/* 🔷 CAMADA 2: SETUPS (Informativos) */}
           <div className="p-3 border-b bg-secondary/30">
             <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1 mb-2">
               🔷 CAMADA 2: SETUPS DETECTADOS
             </h3>
-            
+
             <div className="flex flex-wrap gap-1 mb-2">
               {mtfData.checklist.sweepDetected && (
                 <Badge variant="outline" className="text-[9px] bg-success/10 border-success/30">
@@ -833,19 +818,18 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </Badge>
               )}
             </div>
-            
+
             {/* Confluence Score Mini */}
             <div className="flex items-center gap-2">
               <div className="text-[9px] text-muted-foreground">Confluência:</div>
               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-500 ${
-                    (mtfData.checklist.confluencePercentage || 0) >= 60 
-                      ? "bg-success" 
+                <div
+                  className={`h-full transition-all duration-500 ${(mtfData.checklist.confluencePercentage || 0) >= 60
+                      ? "bg-success"
                       : (mtfData.checklist.confluencePercentage || 0) >= 40
-                      ? "bg-warning"
-                      : "bg-destructive"
-                  }`}
+                        ? "bg-warning"
+                        : "bg-destructive"
+                    }`}
                   style={{ width: `${Math.min(mtfData.checklist.confluencePercentage || 0, 100)}%` }}
                 />
               </div>
@@ -854,54 +838,50 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
               </div>
             </div>
           </div>
-          
+
           {/* 🔷 CAMADA 3: DECISION ENGINE */}
-          <div className={`p-3 ${
-            mtfData.checklist.decision?.execute 
-              ? "bg-success/10" 
+          <div className={`p-3 ${mtfData.checklist.decision?.execute
+              ? "bg-success/10"
               : mtfData.checklist.context?.ready
-              ? "bg-warning/10"
-              : "bg-destructive/10"
-          }`}>
+                ? "bg-warning/10"
+                : "bg-destructive/10"
+            }`}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1">
                 🔷 CAMADA 3: DECISÃO
               </h3>
-              <Badge className={`text-xs font-bold ${
-                mtfData.checklist.decision?.execute
+              <Badge className={`text-xs font-bold ${mtfData.checklist.decision?.execute
                   ? "bg-success"
                   : mtfData.checklist.context?.ready
-                  ? "bg-warning text-warning-foreground"
-                  : "bg-destructive"
-              }`}>
+                    ? "bg-warning text-warning-foreground"
+                    : "bg-destructive"
+                }`}>
                 {mtfData.checklist.decision?.execute ? "EXECUTAR" : "HOLD"}
               </Badge>
             </div>
-            
+
             {/* Combined Score Bar */}
             <Card className="p-2 bg-card/50 border mb-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[9px] text-muted-foreground">Score Combinado</span>
-                <span className={`text-sm font-bold ${
-                  (mtfData.checklist.decision?.combinedScore || 0) >= 55 
-                    ? "text-success" 
+                <span className={`text-sm font-bold ${(mtfData.checklist.decision?.combinedScore || 0) >= 55
+                    ? "text-success"
                     : "text-warning"
-                }`}>
+                  }`}>
                   {(mtfData.checklist.decision?.combinedScore || 0).toFixed(0)}/100
                 </span>
               </div>
-              
+
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
-                <div 
-                  className={`h-full transition-all duration-500 ${
-                    (mtfData.checklist.decision?.combinedScore || 0) >= 55 
-                      ? "bg-success" 
+                <div
+                  className={`h-full transition-all duration-500 ${(mtfData.checklist.decision?.combinedScore || 0) >= 55
+                      ? "bg-success"
                       : "bg-warning"
-                  }`}
+                    }`}
                   style={{ width: `${Math.min(mtfData.checklist.decision?.combinedScore || 0, 100)}%` }}
                 />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-2 text-[9px] mt-2">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Confluência:</span>
@@ -913,16 +893,15 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                 </div>
               </div>
             </Card>
-            
+
             {/* Decision Reason */}
-            <div className={`text-[10px] p-2 rounded border ${
-              mtfData.checklist.decision?.execute 
-                ? "bg-success/20 border-success/30 text-success" 
+            <div className={`text-[10px] p-2 rounded border ${mtfData.checklist.decision?.execute
+                ? "bg-success/20 border-success/30 text-success"
                 : "bg-muted border-border text-muted-foreground"
-            }`}>
+              }`}>
               {mtfData.checklist.decision?.reason || "Aguardando análise..."}
             </div>
-            
+
             {/* R:R */}
             <div className="flex items-center justify-between mt-2 text-[9px]">
               <span className="text-muted-foreground">Risco/Retorno:</span>
@@ -946,7 +925,7 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
             .filter(s => s.type === "VENDA")
             .sort((a, b) => b.rr - a.rr)[0];
           const displaySignals = [bestBuySignal, bestSellSignal].filter(Boolean);
-          
+
           return (
             <>
               <div className="flex items-center gap-2 mb-3">
@@ -960,66 +939,65 @@ export const SMCPanel = ({ symbol, interval, mtfData }: SMCPanelProps) => {
                   </Badge>
                 )}
               </div>
-              
+
               {displaySignals.length > 0 ? (
                 <div className="space-y-3">
                   {displaySignals.map((signal) => (
-              <Card
-                key={signal.id}
-                className={`p-3 border-2 ${
-                  signal.type === "COMPRA"
-                    ? "border-success bg-success/10"
-                    : "border-destructive bg-destructive/10"
-                }`}
-              >
-                <div className="flex justify-between items-center mb-2">
-                  <Badge 
-                    variant={signal.type === "COMPRA" ? "default" : "destructive"}
-                    className="text-sm font-bold"
-                  >
-                    {signal.type === "COMPRA" ? "🟢 COMPRA" : "🔴 VENDA"}
-                  </Badge>
-                  <Badge variant="outline" className="bg-background">
-                    {signal.confidence}% ⭐
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                  <div className="bg-background/50 p-2 rounded">
-                    <div className="text-muted-foreground text-[9px]">ENTRADA</div>
-                    <div className="font-mono font-bold text-sm">${signal.entry.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-background/50 p-2 rounded">
-                    <div className="text-muted-foreground text-[9px]">STOP LOSS</div>
-                    <div className="font-mono text-destructive text-sm">${signal.sl.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-background/50 p-2 rounded">
-                    <div className="text-muted-foreground text-[9px]">TAKE PROFIT</div>
-                    <div className="font-mono text-success text-sm">${signal.tp.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-accent/20 p-2 rounded">
-                    <div className="text-muted-foreground text-[9px]">RISCO/RETORNO</div>
-                    <div className="font-mono font-bold text-accent text-sm">1:{signal.rr.toFixed(2)}</div>
-                  </div>
-                </div>
-                
-                {signal.targetSwing && (
-                  <div className="text-[9px] bg-background/70 p-2 rounded mb-2">
-                    🎯 Alvo: {signal.targetSwing.type === "high" ? "Topo" : "Fundo"} estrutural em ${signal.targetSwing.price.toFixed(2)}
-                  </div>
-                )}
-                
-                {signal.factors && (
-                  <div className="text-[9px] text-muted-foreground border-t pt-2">
-                    <div className="font-semibold mb-1">Confluência:</div>
-                    {signal.factors.join(" • ")}
-                  </div>
-                )}
-                
-                <div className="text-[8px] text-muted-foreground/60 mt-2">
-                  Detectado às {signal.time}
-                </div>
-              </Card>
+                    <Card
+                      key={signal.id}
+                      className={`p-3 border-2 ${signal.type === "COMPRA"
+                          ? "border-success bg-success/10"
+                          : "border-destructive bg-destructive/10"
+                        }`}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <Badge
+                          variant={signal.type === "COMPRA" ? "default" : "destructive"}
+                          className="text-sm font-bold"
+                        >
+                          {signal.type === "COMPRA" ? "🟢 COMPRA" : "🔴 VENDA"}
+                        </Badge>
+                        <Badge variant="outline" className="bg-background">
+                          {signal.confidence}% ⭐
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                        <div className="bg-background/50 p-2 rounded">
+                          <div className="text-muted-foreground text-[9px]">ENTRADA</div>
+                          <div className="font-mono font-bold text-sm">${signal.entry.toFixed(2)}</div>
+                        </div>
+                        <div className="bg-background/50 p-2 rounded">
+                          <div className="text-muted-foreground text-[9px]">STOP LOSS</div>
+                          <div className="font-mono text-destructive text-sm">${signal.sl.toFixed(2)}</div>
+                        </div>
+                        <div className="bg-background/50 p-2 rounded">
+                          <div className="text-muted-foreground text-[9px]">TAKE PROFIT</div>
+                          <div className="font-mono text-success text-sm">${signal.tp.toFixed(2)}</div>
+                        </div>
+                        <div className="bg-accent/20 p-2 rounded">
+                          <div className="text-muted-foreground text-[9px]">RISCO/RETORNO</div>
+                          <div className="font-mono font-bold text-accent text-sm">1:{signal.rr.toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      {signal.targetSwing && (
+                        <div className="text-[9px] bg-background/70 p-2 rounded mb-2">
+                          🎯 Alvo: {signal.targetSwing.type === "high" ? "Topo" : "Fundo"} estrutural em ${signal.targetSwing.price.toFixed(2)}
+                        </div>
+                      )}
+
+                      {signal.factors && (
+                        <div className="text-[9px] text-muted-foreground border-t pt-2">
+                          <div className="font-semibold mb-1">Confluência:</div>
+                          {signal.factors.join(" • ")}
+                        </div>
+                      )}
+
+                      <div className="text-[8px] text-muted-foreground/60 mt-2">
+                        Detectado às {signal.time}
+                      </div>
+                    </Card>
                   ))}
                 </div>
               ) : (
